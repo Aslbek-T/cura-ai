@@ -217,17 +217,27 @@ export default function DoctorDashboard() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Patient roster */}
-        <section>
+        <section className="min-h-[500px] h-auto">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-lg font-semibold">{t("yourPatients")}</h3>
-            <div className="relative w-48">
-              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t("searchPatients")}
-                className="h-9 pl-8 text-sm"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative w-40 sm:w-48">
+                <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder={t("searchPatients")}
+                  className="h-9 pl-8 text-sm"
+                />
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setAddPatientOpen(true)}
+                className="gradient-primary text-primary-foreground gap-1 h-9"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {lang === "es" ? "Agregar" : "Add Patient"}
+              </Button>
             </div>
           </div>
 
@@ -238,7 +248,7 @@ export default function DoctorDashboard() {
               {patients.length ? (lang === "es" ? "Sin resultados" : "No matches") : (lang === "es" ? "Sin pacientes asignados" : "No patients assigned.")}
             </Card>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 h-auto">
               {filteredPatients.map((p) => {
                 const flags = flagCountFor(p.id);
                 const age = calculateAge(p.date_of_birth);
