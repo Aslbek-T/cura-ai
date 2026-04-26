@@ -311,23 +311,14 @@ export default function PatientDashboard() {
               </div>
             </div>
             <div className="space-y-3 p-6">
-              <Textarea
-                value={symptoms}
-                onChange={(e) => setSymptoms(e.target.value)}
-                placeholder={t("navigatorPlaceholder")}
-                rows={4}
-                className="resize-none"
+              <StructuredAiInput
+                patientName={profile?.full_name ?? ""}
+                patientAge={calculateAge(profile?.date_of_birth ?? null)}
+                conditions={patient?.conditions ?? []}
+                medications={patient?.medications ?? []}
+                loading={aiLoading}
+                onSubmit={handleAiSubmit}
               />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Badge variant="outline" className="gap-1.5 text-xs border-accent/30 text-accent">
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                  {t("respondingIn")}: {lang === "es" ? t("langSpanish") : t("langEnglish")}
-                </Badge>
-                <Button onClick={handleAiSubmit} disabled={aiLoading || !symptoms.trim()} className="gradient-primary text-primary-foreground hover:opacity-95 gap-2">
-                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  {t("sendToCura")}
-                </Button>
-              </div>
 
               {aiLoading && (
                 <div className="flex items-center gap-3 rounded-xl bg-accent-soft p-4 text-sm text-accent">
