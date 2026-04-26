@@ -55,23 +55,15 @@ async function callAI(prompt, maxTokens = 400) {
 // HELPER: fetch patient context from Supabase
 // ─────────────────────────────────────────────
 async function getPatientContext(patientId) {
-  const { data: patient, error: pe } = await supabase
+  const { data: patient } = await supabase
     .from('patients')
-    .select('*')
+    .select(`
+      *,
+      profiles (full_name, preferred_language),
+      assigned_doctor:profiles!patients_assigned_doctor_id_fkey (full_name)
+    `)
     .eq('id', patientId)
     .single();
-
-  const { data: profile, error: pre } = await supabase
-    .from('profiles')
-    .select('full_name, preferred_language')
-    .eq('id', patientId)
-    .single();
-
-  const { data: doctorProfile } = patient?.assigned_doctor_id ? await supabase
-    .from('profiles')
-    .select('full_name')
-    .eq('id', patient.assigned_doctor_id)
-    .single() : { data: null };
 
   const { data: timeline } = await supabase
     .from('health_timeline')
@@ -87,13 +79,7 @@ async function getPatientContext(patientId) {
     .order('scheduled_at', { ascending: false })
     .limit(3);
 
-  const merged = patient ? {
-    ...patient,
-    profiles: profile,
-    assigned_doctor: doctorProfile
-  } : null;
-
-  return { patient: merged, timeline, appointments };
+  return { patient, timeline, appointments };
 }
 
 // ─────────────────────────────────────────────
@@ -140,109 +126,60 @@ ${recentEvents || 'No recent history'}
 // POST /api/ai-advice
 // ─────────────────────────────────────────────
 app.post('/api/ai-advice', async (req, res) => {
-    try {
-      const { patientId, structuredInput, language } = req.body;
-  
-      const { data: testPatient, error: testError } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('id', patientId)
-        .single();
-      if (testError || !testPatient) {
-        return res.status(404).json({
-          error: 'Patient not found',
-          patientId,
-          supabaseError: testError?.message,
-          code: testError?.code
-        });
-      }
+  try {
+    const { patientId, structuredInput, language } = req.body;
+    const { patient, timeline, appointments } = await getPatientContext(patientId);
+    const context = buildContextString(patient, timeline, appointments);
+    const respondInLang = language === 'es' ? 'Spanish' : 'English';
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name, preferred_language')
-        .eq('id', patientId)
-        .single();
+    const prompt = `
+You are Cura AI, a compassionate chronic care assistant for rural Arizona patients.
+You are NOT a doctor and cannot diagnose. Provide supportive, personalized guidance only.
 
-      const { data: doctorProfile } = testPatient?.assigned_doctor_id ? await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('id', testPatient.assigned_doctor_id)
-        .single() : { data: null };
+PATIENT CONTEXT:
+${context}
 
-      const { data: timeline } = await supabase
-        .from('health_timeline')
-        .select('*')
-        .eq('patient_id', patientId)
-        .order('created_at', { ascending: false })
-        .limit(10);
+PATIENT REPORT:
+${structuredInput}
 
-      const { data: appointments } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('patient_id', patientId)
-        .order('scheduled_at', { ascending: false })
-        .limit(3);
+INSTRUCTIONS:
+- Respond in ${respondInLang}
+- Keep response under 120 words
+- Reference the patient's specific conditions and medications by name
+- If symptoms are severe (7+ out of 10) or include chest pain or shortness of breath, strongly advise contacting their doctor or calling 911
+- Be warm and supportive, not clinical
+- End with one concrete next step
+- Do NOT start your response with "I"
+- Do NOT include any disclaimers about being an AI
+    `.trim();
 
-      const patient = testPatient ? {
-        ...testPatient,
-        profiles: profile,
-        assigned_doctor: doctorProfile
-      } : null;
+    const response = await callAI(prompt, 300);
 
-      const context = buildContextString(patient, timeline, appointments);
-      const respondInLang = language === 'es' ? 'Spanish' : 'English';
-  
-      const prompt = `
-  You are Cura AI, a compassionate chronic care assistant for rural Arizona patients.
-  You are NOT a doctor and cannot diagnose. Provide supportive, personalized guidance only.
-  
-  PATIENT CONTEXT:
-  ${context}
-  
-  PATIENT REPORT:
-  ${structuredInput}
-  
-  INSTRUCTIONS:
-  - Respond in ${respondInLang}
-  - Keep response under 120 words
-  - Reference the patient's specific conditions and medications by name
-  - If symptoms are severe (7+ out of 10) or include chest pain or shortness of breath, strongly advise contacting their doctor or calling 911
-  - Be warm and supportive, not clinical
-  - End with one concrete next step
-  - Do NOT start your response with "I"
-  - Do NOT include any disclaimers about being an AI
-      `.trim();
-  
-      console.log('[ai-advice] calling AI', { patientId, language, respondInLang });
-      console.log('[ai-advice] prompt chars', prompt.length);
-      const response = await callAI(prompt, 300);
-  
-      const flagged =
-        structuredInput.toLowerCase().includes('chest pain') ||
-        structuredInput.toLowerCase().includes('shortness of breath') ||
-        structuredInput.includes('severity: 9') ||
-        structuredInput.includes('severity: 10');
-  
-      await supabase.from('health_timeline').insert({
-        patient_id: patientId,
-        event_type: 'ai_advice',
-        content: {
-          response_en: language === 'en' ? response : null,
-          response_es: language === 'es' ? response : null,
-          flagged,
-          structured_input: structuredInput
-        },
-        created_by: null
-      });
-  
-      res.json({ response, flagged });
-    } catch (err) {
-      console.error('ai-advice error:', err.message);
-      res.status(500).json({ error: err.message });
-    }
-  });
+    const flagged =
+      structuredInput.toLowerCase().includes('chest pain') ||
+      structuredInput.toLowerCase().includes('shortness of breath') ||
+      structuredInput.includes('severity: 9') ||
+      structuredInput.includes('severity: 10');
 
-  
+    await supabase.from('health_timeline').insert({
+      patient_id: patientId,
+      event_type: 'ai_advice',
+      content: {
+        response_en: language === 'en' ? response : null,
+        response_es: language === 'es' ? response : null,
+        flagged,
+        structured_input: structuredInput
+      },
+      created_by: null
+    });
+
+    res.json({ response, flagged });
+  } catch (err) {
+    console.error('ai-advice error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─────────────────────────────────────────────
 // ENDPOINT 2: PATIENT SUMMARY FOR DOCTOR
 // POST /api/ai-summary
@@ -340,7 +277,7 @@ app.post('/api/sms/inbound', async (req, res) => {
     const incomingText = Body?.trim();
     const fromPhone = From;
 
-    const { data: profile, error: profileErr } = await supabase
+    const { data: profile } = await supabase
       .from('profiles')
       .select('id, full_name, preferred_language')
       .eq('phone', fromPhone)
@@ -356,7 +293,7 @@ app.post('/api/sms/inbound', async (req, res) => {
     let replyText = '';
 
     if (!profile) {
-      replyText = `Welcome to Cura AI. We could not find your account. ${profileErr?.message || ''}`.trim();
+      replyText = 'Welcome to Cura AI. We could not find your account. Please contact your Banner provider to get registered.';
     } else {
       const lang = profile.preferred_language || 'en';
       const patientId = profile.id;
@@ -476,6 +413,18 @@ End with a simple yes/no question they can reply to.
 // START SERVER
 // ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
+
+app.get('/debug', async (req, res) => {
+    const { data: patients, error: pe } = await supabase.from('patients').select('id').limit(5);
+    const { data: profiles, error: pre } = await supabase.from('profiles').select('id, role').limit(5);
+    res.json({ 
+      patients, 
+      profiles,
+      patientsError: pe?.message,
+      profilesError: pre?.message,
+      supabaseUrl: process.env.VITE_SUPABASE_URL?.substring(0, 30)
+    });
+  });
 
 app.listen(PORT, () => {
   console.log(`Cura AI backend running on http://localhost:${PORT}`);
