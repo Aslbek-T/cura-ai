@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import { StructuredAiInput, StructuredInputValue } from "@/components/StructuredAiInput";
 import { calculateAge } from "@/lib/i18n";
 
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 interface PatientRow {
   id: string;
