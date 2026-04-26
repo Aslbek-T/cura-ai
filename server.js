@@ -140,60 +140,81 @@ ${recentEvents || 'No recent history'}
 // POST /api/ai-advice
 // ─────────────────────────────────────────────
 app.post('/api/ai-advice', async (req, res) => {
-  try {
-    const { patientId, structuredInput, language } = req.body;
-    const { patient, timeline, appointments } = await getPatientContext(patientId);
-    const context = buildContextString(patient, timeline, appointments);
-    const respondInLang = language === 'es' ? 'Spanish' : 'English';
+    try {
+      const { patientId, structuredInput, language } = req.body;
+  
+      // DEBUG
+      const { data: testPatient, error: testError } = await supabase
+        .from('patients')
+        .select('*')
+        .eq('id', patientId)
+        .single();
+      console.log('DEBUG patientId:', patientId);
+      console.log('DEBUG testPatient:', JSON.stringify(testPatient));
+      console.log('DEBUG testError:', JSON.stringify(testError));
+      if (testError || !testPatient) {
+        return res.status(404).json({
+          error: 'Patient not found',
+          patientId,
+          supabaseError: testError?.message,
+          code: testError?.code
+        });
+      }
+      // END DEBUG
+  
+      const { patient, timeline, appointments } = await getPatientContext(patientId);
+      const context = buildContextString(patient, timeline, appointments);
+      const respondInLang = language === 'es' ? 'Spanish' : 'English';
+  
+      const prompt = `
+  You are Cura AI, a compassionate chronic care assistant for rural Arizona patients.
+  You are NOT a doctor and cannot diagnose. Provide supportive, personalized guidance only.
+  
+  PATIENT CONTEXT:
+  ${context}
+  
+  PATIENT REPORT:
+  ${structuredInput}
+  
+  INSTRUCTIONS:
+  - Respond in ${respondInLang}
+  - Keep response under 120 words
+  - Reference the patient's specific conditions and medications by name
+  - If symptoms are severe (7+ out of 10) or include chest pain or shortness of breath, strongly advise contacting their doctor or calling 911
+  - Be warm and supportive, not clinical
+  - End with one concrete next step
+  - Do NOT start your response with "I"
+  - Do NOT include any disclaimers about being an AI
+      `.trim();
+  
+      const response = await callAI(prompt, 300);
+  
+      const flagged =
+        structuredInput.toLowerCase().includes('chest pain') ||
+        structuredInput.toLowerCase().includes('shortness of breath') ||
+        structuredInput.includes('severity: 9') ||
+        structuredInput.includes('severity: 10');
+  
+      await supabase.from('health_timeline').insert({
+        patient_id: patientId,
+        event_type: 'ai_advice',
+        content: {
+          response_en: language === 'en' ? response : null,
+          response_es: language === 'es' ? response : null,
+          flagged,
+          structured_input: structuredInput
+        },
+        created_by: null
+      });
+  
+      res.json({ response, flagged });
+    } catch (err) {
+      console.error('ai-advice error:', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
-    const prompt = `
-You are Cura AI, a compassionate chronic care assistant for rural Arizona patients.
-You are NOT a doctor and cannot diagnose. Provide supportive, personalized guidance only.
-
-PATIENT CONTEXT:
-${context}
-
-PATIENT REPORT:
-${structuredInput}
-
-INSTRUCTIONS:
-- Respond in ${respondInLang}
-- Keep response under 120 words
-- Reference the patient's specific conditions and medications by name
-- If symptoms are severe (7+ out of 10) or include chest pain or shortness of breath, strongly advise contacting their doctor or calling 911
-- Be warm and supportive, not clinical
-- End with one concrete next step
-- Do NOT start your response with "I"
-- Do NOT include any disclaimers about being an AI
-    `.trim();
-
-    const response = await callAI(prompt, 300);
-
-    const flagged =
-      structuredInput.toLowerCase().includes('chest pain') ||
-      structuredInput.toLowerCase().includes('shortness of breath') ||
-      structuredInput.includes('severity: 9') ||
-      structuredInput.includes('severity: 10');
-
-    await supabase.from('health_timeline').insert({
-      patient_id: patientId,
-      event_type: 'ai_advice',
-      content: {
-        response_en: language === 'en' ? response : null,
-        response_es: language === 'es' ? response : null,
-        flagged,
-        structured_input: structuredInput
-      },
-      created_by: null
-    });
-
-    res.json({ response, flagged });
-  } catch (err) {
-    console.error('ai-advice error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
+  
 // ─────────────────────────────────────────────
 // ENDPOINT 2: PATIENT SUMMARY FOR DOCTOR
 // POST /api/ai-summary
@@ -427,18 +448,6 @@ End with a simple yes/no question they can reply to.
 // START SERVER
 // ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-
-app.get('/debug', async (req, res) => {
-    const { data: patients, error: pe } = await supabase.from('patients').select('id').limit(5);
-    const { data: profiles, error: pre } = await supabase.from('profiles').select('id, role').limit(5);
-    res.json({ 
-      patients, 
-      profiles,
-      patientsError: pe?.message,
-      profilesError: pre?.message,
-      supabaseUrl: process.env.VITE_SUPABASE_URL?.substring(0, 30)
-    });
-  });
 
 app.listen(PORT, () => {
   console.log(`Cura AI backend running on http://localhost:${PORT}`);
