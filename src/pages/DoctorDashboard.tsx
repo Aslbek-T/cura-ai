@@ -493,6 +493,8 @@ export default function DoctorDashboard() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AddPatientSheet open={addPatientOpen} onOpenChange={setAddPatientOpen} onSuccess={loadAll} />
     </AppShell>
   );
 }
