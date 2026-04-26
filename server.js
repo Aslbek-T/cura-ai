@@ -61,71 +61,52 @@ async function callAI(prompt, maxTokens = 400) {
 // HELPER: fetch patient context from Supabase
 // ─────────────────────────────────────────────
 async function getPatientContext(patientId) {
-  const { data: patient } = await supabase
-    .from('patients')
-    .select(`
-      *,
-      profiles (full_name, preferred_language),
-      assigned_doctor:profiles!patients_assigned_doctor_id_fkey (full_name)
-    `)
-    .eq('id', patientId)
-    .single();
-
-  const { data: timeline } = await supabase
-    .from('health_timeline')
-    .select('*')
-    .eq('patient_id', patientId)
-    .order('created_at', { ascending: false })
-    .limit(10);
-
-  const { data: appointments } = await supabase
-    .from('appointments')
-    .select('*')
-    .eq('patient_id', patientId)
-    .order('scheduled_at', { ascending: false })
-    .limit(3);
-
-  return { patient, timeline, appointments };
-}
-
-// ─────────────────────────────────────────────
-// HELPER: build context string for AI
-// ─────────────────────────────────────────────
-function buildContextString(patient, timeline, appointments) {
-  const name = patient?.profiles?.full_name || 'Patient';
-  const conditions = (patient?.conditions || []).join(', ') || 'None reported';
-  const meds = (patient?.medications || [])
-    .map(m => `${m.name} ${m.dose} ${m.frequency}`)
-    .join(', ') || 'None reported';
-  const allergies = (patient?.allergies || []).join(', ') || 'None reported';
-  const doctor = patient?.assigned_doctor?.full_name || 'their Banner physician';
-
-  const recentEvents = (timeline || [])
-    .slice(0, 5)
-    .map(e => {
-      const d = new Date(e.created_at).toLocaleDateString();
-      if (e.event_type === 'sms_checkin') return `[${d}] Check-in: ${e.content?.message || 'symptom reported'}`;
-      if (e.event_type === 'ai_advice') return `[${d}] AI flagged: ${e.content?.flagged ? 'yes' : 'no'}`;
-      if (e.event_type === 'doctor_note') return `[${d}] Doctor note: ${e.content?.note || ''}`;
-      return `[${d}] ${e.event_type}`;
-    })
-    .join('\n');
-
-  const nextAppt = appointments?.[0]
-    ? `Next appointment: ${new Date(appointments[0].scheduled_at).toLocaleDateString()} (${appointments[0].type})`
-    : 'No upcoming appointments';
-
-  return `
-Patient: ${name}
-Conditions: ${conditions}
-Medications: ${meds}
-Allergies: ${allergies}
-Assigned Doctor: ${doctor}
-${nextAppt}
-Recent History:
-${recentEvents || 'No recent history'}
-  `.trim();
-}
+    const { data: patient } = await supabase
+      .from('patients')
+      .select('*')
+      .eq('id', patientId)
+      .single();
+  
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, preferred_language')
+      .eq('id', patientId)
+      .single();
+  
+    let doctorProfile = null;
+    if (patient?.assigned_doctor_id) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', patient.assigned_doctor_id)
+        .single();
+      doctorProfile = data;
+    }
+  
+    const { data: timeline } = await supabase
+      .from('health_timeline')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false })
+      .limit(10);
+  
+    const { data: appointments } = await supabase
+      .from('appointments')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('scheduled_at', { ascending: false })
+      .limit(3);
+  
+    return {
+      patient: patient ? {
+        ...patient,
+        profiles: profile,
+        assigned_doctor: doctorProfile
+      } : null,
+      timeline: timeline || [],
+      appointments: appointments || []
+    };
+  }
 
 // ─────────────────────────────────────────────
 // ENDPOINT 1: AI ADVICE FOR PATIENT
@@ -433,9 +414,9 @@ End with a simple yes/no question they can reply to.
     });
 
     res.status(200).send('<Response></Response>');
-  } catch (err) {
-    console.error('sms/inbound error:', err.message);
-    res.status(500).send('<Response></Response>');
+    } catch (err) {
+    console.error('sms/inbound error FULL:', err);
+    res.status(500).json({ error: err.message, stack: err.stack });
   }
 });
 
@@ -443,6 +424,15 @@ End with a simple yes/no question they can reply to.
 // START SERVER
 // ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
+
+process.on('uncaughtException', (err) => {
+    console.error('UNCAUGHT EXCEPTION:', err);
+  });
+  
+  process.on('unhandledRejection', (err) => {
+    console.error('UNHANDLED REJECTION:', err);
+  });
+
 app.listen(PORT, () => {
   console.log(`Cura AI backend running on http://localhost:${PORT}`);
 });
