@@ -19,6 +19,8 @@ import {
   CheckCircle2, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { StructuredAiInput, StructuredInputValue } from "@/components/StructuredAiInput";
+import { calculateAge } from "@/lib/i18n";
 
 interface PatientRow {
   id: string;
@@ -102,7 +104,7 @@ export default function PatientDashboard() {
   const [doctorName, setDoctorName] = useState<string>("Dr. Chen");
   const [loading, setLoading] = useState(true);
 
-  const [symptoms, setSymptoms] = useState("");
+  const [lastInput, setLastInput] = useState<StructuredInputValue | null>(null);
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [aiTimestamp, setAiTimestamp] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
@@ -148,28 +150,51 @@ export default function PatientDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
 
-  const handleAiSubmit = async () => {
-    if (!symptoms.trim()) return;
+  const handleAiSubmit = async (val: StructuredInputValue) => {
+    setLastInput(val);
     setAiLoading(true);
     setAiResponse(null);
     setAiFlagged(false);
     setAiSaved(false);
+
+    // Save sms_checkin event with structured input
+    if (user) {
+      await supabase.from("health_timeline").insert({
+        patient_id: user.id,
+        event_type: "sms_checkin",
+        content: {
+          en: `Check-in: feeling ${val.feeling}, symptoms: ${val.symptoms.join(", ")} (severity ${val.severity}/10).`,
+          es: `Chequeo: sintiéndose ${val.feeling}, síntomas: ${val.symptoms.join(", ")} (severidad ${val.severity}/10).`,
+          structured_input: JSON.stringify({
+            feeling: val.feeling,
+            symptoms: val.symptoms,
+            severity: val.severity,
+            medication_adherence: val.medAdherence,
+            reactions: val.reactions,
+          }),
+          raw_summary: val.rawSummary,
+          language: lang,
+        },
+      });
+    }
+
     await new Promise((r) => setTimeout(r, 1800));
     setAiResponse(MOCK_AI_RESPONSE[lang]);
     setAiTimestamp(new Date().toISOString());
     setAiLoading(false);
+    loadData();
   };
 
   const insertAdvice = async (flagged: boolean) => {
     if (!user || !aiResponse) return;
+    const summary = lastInput?.rawSummary ?? "";
     const { error } = await supabase.from("health_timeline").insert({
       patient_id: user.id,
       event_type: "ai_advice",
       content: {
-        en: `Patient reported: "${symptoms}". AI advice: ${MOCK_AI_RESPONSE.en}`,
-        es: `Paciente reportó: "${symptoms}". Consejo IA: ${MOCK_AI_RESPONSE.es}`,
+        en: `Patient summary: ${summary}. AI advice: ${MOCK_AI_RESPONSE.en}`,
+        es: `Resumen del paciente: ${summary}. Consejo IA: ${MOCK_AI_RESPONSE.es}`,
         flagged: flagged ? "true" : "false",
-        symptoms,
       },
     });
     if (error) {
@@ -286,23 +311,14 @@ export default function PatientDashboard() {
               </div>
             </div>
             <div className="space-y-3 p-6">
-              <Textarea
-                value={symptoms}
-                onChange={(e) => setSymptoms(e.target.value)}
-                placeholder={t("navigatorPlaceholder")}
-                rows={4}
-                className="resize-none"
+              <StructuredAiInput
+                patientName={profile?.full_name ?? ""}
+                patientAge={calculateAge(profile?.date_of_birth ?? null)}
+                conditions={patient?.conditions ?? []}
+                medications={patient?.medications ?? []}
+                loading={aiLoading}
+                onSubmit={handleAiSubmit}
               />
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <Badge variant="outline" className="gap-1.5 text-xs border-accent/30 text-accent">
-                  <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                  {t("respondingIn")}: {lang === "es" ? t("langSpanish") : t("langEnglish")}
-                </Badge>
-                <Button onClick={handleAiSubmit} disabled={aiLoading || !symptoms.trim()} className="gradient-primary text-primary-foreground hover:opacity-95 gap-2">
-                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  {t("sendToCura")}
-                </Button>
-              </div>
 
               {aiLoading && (
                 <div className="flex items-center gap-3 rounded-xl bg-accent-soft p-4 text-sm text-accent">

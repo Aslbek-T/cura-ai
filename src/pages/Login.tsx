@@ -136,9 +136,13 @@ export default function Login() {
 
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-2">
-                <DemoButton label={t("demoPatient")} onClick={() => fillDemo("patient")} />
-                <DemoButton label={t("demoDoctor")} onClick={() => fillDemo("doctor")} />
-                <DemoButton label={t("demoDriver")} onClick={() => fillDemo("driver")} />
+                {([
+                  { key: "patient" as const, label: t("demoPatient") },
+                  { key: "doctor" as const, label: t("demoDoctor") },
+                  { key: "driver" as const, label: t("demoDriver") },
+                ]).map((d) => (
+                  <DemoButton key={d.key} label={d.label} onClick={() => fillDemo(d.key)} />
+                ))}
               </div>
               <Button onClick={handleSeed} variant="ghost" className="w-full gap-2 text-xs text-muted-foreground hover:text-foreground" disabled={seeding} size="sm">
                 {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-accent" />}
@@ -147,7 +151,13 @@ export default function Login() {
             </div>
           </Card>
 
-          <p className="mt-6 text-center text-xs text-muted-foreground">
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            {lang === "es" ? "¿No tienes una cuenta?" : "Don't have an account?"}{" "}
+            <Link to="/signup" className="font-semibold text-primary hover:underline">
+              {t("signUp")}
+            </Link>
+          </p>
+          <p className="mt-3 text-center text-xs text-muted-foreground">
             HIPAA-conscious design · Built for rural Arizona communities
           </p>
         </div>

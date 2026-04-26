@@ -7,6 +7,7 @@ import { LanguageProvider } from "@/contexts/LanguageContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
+import SignUp from "./pages/SignUp";
 import RoleRouter from "./pages/RoleRouter";
 import PatientDashboard from "./pages/PatientDashboard";
 import DoctorDashboard from "./pages/DoctorDashboard";
@@ -26,6 +27,7 @@ const App = () => (
             <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<SignUp />} />
               <Route path="/app" element={<RoleRouter />} />
               <Route path="/patient" element={<RoleRouter require="patient"><PatientDashboard /></RoleRouter>} />
               <Route path="/doctor" element={<RoleRouter require="doctor"><DoctorDashboard /></RoleRouter>} />
