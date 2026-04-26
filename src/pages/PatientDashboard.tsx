@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -15,6 +16,7 @@ import { toast } from "sonner";
 import {
   Sparkles, Send, Loader2, Pill, Calendar, Car, Flag,
   MessageCircle, Bot, Stethoscope, ChevronDown, Phone, Video,
+  CheckCircle2, Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -51,8 +53,8 @@ interface RideRequest {
 }
 
 const MOCK_AI_RESPONSE = {
-  en: "Maria, based on your history, dizziness combined with your high blood pressure needs attention. Rest, drink water, and if symptoms continue for more than 2 hours, contact Dr. Chen.",
-  es: "María, basándome en tu historial, el mareo junto con tu presión arterial alta necesita atención. Descansa, toma agua y si los síntomas continúan por más de 2 horas, contacta al Dr. Chen.",
+  en: "Maria, based on your history with Type 2 Diabetes and Hypertension, the symptoms you describe need attention. Rest, drink water, and check your blood sugar in 30 minutes. If symptoms continue for more than 2 hours, contact Dr. Chen — I can flag this for him now.",
+  es: "María, basándome en tu historial con Diabetes Tipo 2 e Hipertensión, los síntomas que describes necesitan atención. Descansa, toma agua y revisa tu glucosa en 30 minutos. Si los síntomas continúan por más de 2 horas, contacta al Dr. Chen — puedo avisarle ahora.",
 };
 
 const eventIcon = (type: string) => {
@@ -67,16 +69,26 @@ const eventIcon = (type: string) => {
   }
 };
 
-const eventColor = (type: string) => {
+const eventStyle = (type: string) => {
   switch (type) {
-    case "sms_checkin": return "bg-blue-100 text-blue-700";
-    case "ai_advice": return "bg-accent-soft text-accent";
-    case "doctor_note": return "bg-primary-soft text-primary";
-    case "appointment": return "bg-purple-100 text-purple-700";
-    case "ride_request": return "bg-amber-100 text-amber-700";
-    case "medication": return "bg-emerald-100 text-emerald-700";
-    default: return "bg-muted text-muted-foreground";
+    case "sms_checkin": return { dot: "bg-muted text-muted-foreground", border: "border-l-muted-foreground/40" };
+    case "ai_advice": return { dot: "bg-accent-soft text-accent", border: "border-l-accent" };
+    case "doctor_note": return { dot: "bg-primary-soft text-primary", border: "border-l-primary" };
+    case "appointment": return { dot: "bg-primary-soft text-primary", border: "border-l-primary" };
+    case "ride_request": return { dot: "bg-success/10 text-success", border: "border-l-success" };
+    case "medication": return { dot: "bg-emerald-100 text-emerald-700", border: "border-l-emerald-500" };
+    default: return { dot: "bg-muted text-muted-foreground", border: "border-l-muted-foreground/40" };
   }
+};
+
+type FilterKey = "all" | "checkins" | "ai" | "appts" | "rides";
+
+const FILTER_TYPES: Record<FilterKey, string[] | null> = {
+  all: null,
+  checkins: ["sms_checkin"],
+  ai: ["ai_advice"],
+  appts: ["appointment"],
+  rides: ["ride_request"],
 };
 
 export default function PatientDashboard() {
@@ -90,27 +102,28 @@ export default function PatientDashboard() {
   const [doctorName, setDoctorName] = useState<string>("Dr. Chen");
   const [loading, setLoading] = useState(true);
 
-  // AI companion state
   const [symptoms, setSymptoms] = useState("");
   const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [aiTimestamp, setAiTimestamp] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
   const [aiFlagged, setAiFlagged] = useState(false);
+  const [aiSaved, setAiSaved] = useState(false);
 
-  // Ride form state
   const [ridePickup, setRidePickup] = useState("");
   const [rideDate, setRideDate] = useState("");
   const [rideDest, setRideDest] = useState("Banner University Medical Center, Tucson, AZ");
   const [rideSubmitting, setRideSubmitting] = useState(false);
 
-  // SMS panel
-  const [smsOpen, setSmsOpen] = useState(false);
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [smsOpen, setSmsOpen] = useState(true);
+  const [takenMeds, setTakenMeds] = useState<Record<string, boolean>>({});
 
   const loadData = async () => {
     if (!user) return;
     setLoading(true);
     const [patRes, tlRes, apptRes, rideRes] = await Promise.all([
       supabase.from("patients").select("*").eq("id", user.id).maybeSingle(),
-      supabase.from("health_timeline").select("*").eq("patient_id", user.id).order("created_at", { ascending: false }).limit(20),
+      supabase.from("health_timeline").select("*").eq("patient_id", user.id).order("created_at", { ascending: false }).limit(30),
       supabase.from("appointments").select("*").eq("patient_id", user.id).neq("status", "completed").order("scheduled_at", { ascending: true }),
       supabase.from("ride_requests").select("*").eq("patient_id", user.id).order("created_at", { ascending: false }),
     ]);
@@ -140,13 +153,14 @@ export default function PatientDashboard() {
     setAiLoading(true);
     setAiResponse(null);
     setAiFlagged(false);
-    // simulated 2s
-    await new Promise((r) => setTimeout(r, 2000));
+    setAiSaved(false);
+    await new Promise((r) => setTimeout(r, 1800));
     setAiResponse(MOCK_AI_RESPONSE[lang]);
+    setAiTimestamp(new Date().toISOString());
     setAiLoading(false);
   };
 
-  const handleFlag = async () => {
+  const insertAdvice = async (flagged: boolean) => {
     if (!user || !aiResponse) return;
     const { error } = await supabase.from("health_timeline").insert({
       patient_id: user.id,
@@ -154,15 +168,29 @@ export default function PatientDashboard() {
       content: {
         en: `Patient reported: "${symptoms}". AI advice: ${MOCK_AI_RESPONSE.en}`,
         es: `Paciente reportó: "${symptoms}". Consejo IA: ${MOCK_AI_RESPONSE.es}`,
-        flagged: "true",
+        flagged: flagged ? "true" : "false",
         symptoms,
       },
     });
     if (error) {
       toast.error(error.message);
-    } else {
+      return false;
+    }
+    return true;
+  };
+
+  const handleFlag = async () => {
+    if (await insertAdvice(true)) {
       setAiFlagged(true);
       toast.success(t("flagged"));
+      loadData();
+    }
+  };
+
+  const handleSave = async () => {
+    if (await insertAdvice(false)) {
+      setAiSaved(true);
+      toast.success(t("savedToTimeline"));
       loadData();
     }
   };
@@ -181,9 +209,8 @@ export default function PatientDashboard() {
       requested_date: rideDate,
     });
     setRideSubmitting(false);
-    if (error) {
-      toast.error(error.message);
-    } else {
+    if (error) toast.error(error.message);
+    else {
       toast.success(t("rideSuccess"));
       setRidePickup("");
       setRideDate("");
@@ -195,244 +222,316 @@ export default function PatientDashboard() {
   const nextAppt = appointments[0];
   const openRideCount = rides.filter((r) => r.status === "open").length;
 
+  const daysUntilAppt = useMemo(() => {
+    if (!nextAppt) return null;
+    const ms = new Date(nextAppt.scheduled_at).getTime() - Date.now();
+    return Math.max(0, Math.round(ms / 86400000));
+  }, [nextAppt]);
+
+  const filteredTimeline = useMemo(() => {
+    const types = FILTER_TYPES[filter];
+    if (!types) return timeline;
+    return timeline.filter((e) => types.includes(e.event_type));
+  }, [timeline, filter]);
+
+  const greeting = lang === "es" ? "Buenos días" : "Good morning";
+
   return (
-    <AppShell title={t("patientDashboard")}>
-      {/* Welcome Header */}
-      <section className="mb-6">
-        <h2 className="text-2xl font-bold tracking-tight md:text-3xl">
-          {t("goodMorning")}, {firstName}
-        </h2>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {loading ? (
-            <Skeleton className="h-6 w-32" />
-          ) : (
-            patient?.conditions?.map((c) => (
-              <Badge key={c} className="bg-primary-soft text-primary hover:bg-primary-soft border-0 font-medium">
-                {c}
-              </Badge>
-            ))
-          )}
-        </div>
-
-        {/* Stat row */}
-        <div className="mt-5 grid grid-cols-3 gap-3">
-          <Card className="p-3 shadow-card">
-            <p className="text-xs text-muted-foreground">{t("nextAppointment")}</p>
-            <p className="mt-1 text-sm font-semibold">
-              {loading ? <Skeleton className="h-4 w-20" /> : nextAppt ? new Date(nextAppt.scheduled_at).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", { month: "short", day: "numeric" }) : t("none")}
-            </p>
-          </Card>
-          <Card className="p-3 shadow-card">
-            <p className="text-xs text-muted-foreground">{t("medications")}</p>
-            <p className="mt-1 text-sm font-semibold">{loading ? <Skeleton className="h-4 w-8" /> : `${patient?.medications?.length ?? 0}`}</p>
-          </Card>
-          <Card className="p-3 shadow-card">
-            <p className="text-xs text-muted-foreground">{t("openRides")}</p>
-            <p className="mt-1 text-sm font-semibold">{loading ? <Skeleton className="h-4 w-8" /> : openRideCount}</p>
-          </Card>
-        </div>
-      </section>
-
-      {/* AI Companion */}
-      <section className="mb-6">
-        <Card className="overflow-hidden border-border/60 shadow-elevated">
-          <div className="gradient-primary p-5 text-primary-foreground">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5" />
-              <h3 className="text-lg font-semibold">{t("aiCompanion")}</h3>
-            </div>
-            <p className="mt-1 text-sm opacity-90">{t("howAreYou")}</p>
+    <AppShell title={t("patientDashboard")} extras={<NotificationBell count={openRideCount + (nextAppt ? 1 : 0)} />}>
+      {/* Welcome Banner */}
+      <section className="mb-6 overflow-hidden rounded-2xl shadow-elevated">
+        <div className="gradient-primary p-6 text-primary-foreground md:p-8">
+          <h2 className="text-2xl font-bold tracking-tight md:text-3xl">
+            {greeting}, {firstName} 👋
+          </h2>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {loading ? (
+              <Skeleton className="h-6 w-32 bg-white/20" />
+            ) : (
+              patient?.conditions?.map((c) => (
+                <Badge key={c} className="border-0 bg-white/20 text-white hover:bg-white/25 font-medium backdrop-blur-sm">
+                  {c}
+                </Badge>
+              ))
+            )}
           </div>
-          <div className="p-5 space-y-3">
-            <Textarea
-              value={symptoms}
-              onChange={(e) => setSymptoms(e.target.value)}
-              placeholder={t("describeSymptoms")}
-              rows={4}
-              className="resize-none"
+          <div className="mt-5 grid grid-cols-3 gap-3">
+            <BannerStat
+              label={t("nextAppointment")}
+              value={loading ? "…" : nextAppt ? (lang === "es" ? `en ${daysUntilAppt}d` : `in ${daysUntilAppt}d`) : t("none")}
             />
-            <Button onClick={handleAiSubmit} disabled={aiLoading || !symptoms.trim()} className="gradient-primary text-primary-foreground hover:opacity-95 gap-2">
-              {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              {t("sendToCura")}
-            </Button>
+            <BannerStat
+              label={t("medications")}
+              value={loading ? "…" : `${patient?.medications?.length ?? 0} ${lang === "es" ? "activos" : "active"}`}
+            />
+            <BannerStat label={t("openRides")} value={loading ? "…" : `${openRideCount}`} />
+          </div>
+        </div>
+      </section>
 
-            {aiLoading && (
-              <div className="flex items-center gap-2 rounded-xl bg-accent-soft p-4 text-sm text-accent">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                <span>{t("loading")}</span>
-              </div>
-            )}
-
-            {aiResponse && !aiLoading && (
-              <div className="rounded-xl bg-accent-soft border border-accent/20 p-4">
-                <div className="flex items-start gap-2">
-                  <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent text-accent-foreground">
-                    <Bot className="h-3.5 w-3.5" />
-                  </div>
-                  <p className="text-sm leading-relaxed text-foreground">{aiResponse}</p>
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* LEFT COLUMN */}
+        <div className="space-y-6 lg:col-span-2">
+          {/* AI Companion */}
+          <Card className="overflow-hidden border-border/60 shadow-elevated">
+            <div className="border-b border-border bg-gradient-to-br from-accent-soft to-primary-soft/40 px-6 py-5">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl gradient-primary text-primary-foreground shadow-floating">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">{t("navigatorTitle")}</h3>
+                  <p className="text-xs text-muted-foreground">{t("navigatorSubtitle")}</p>
                 </div>
-                {!aiFlagged && (
-                  <Button onClick={handleFlag} variant="outline" size="sm" className="mt-3 gap-1.5">
-                    <Flag className="h-3.5 w-3.5" />
-                    {t("flagForDoctor")}
-                  </Button>
-                )}
-                {aiFlagged && (
-                  <Badge className="mt-3 bg-success/10 text-success border-0">✓ {t("flagged")}</Badge>
-                )}
               </div>
-            )}
-          </div>
-        </Card>
-      </section>
+            </div>
+            <div className="space-y-3 p-6">
+              <Textarea
+                value={symptoms}
+                onChange={(e) => setSymptoms(e.target.value)}
+                placeholder={t("navigatorPlaceholder")}
+                rows={4}
+                className="resize-none"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Badge variant="outline" className="gap-1.5 text-xs border-accent/30 text-accent">
+                  <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                  {t("respondingIn")}: {lang === "es" ? t("langSpanish") : t("langEnglish")}
+                </Badge>
+                <Button onClick={handleAiSubmit} disabled={aiLoading || !symptoms.trim()} className="gradient-primary text-primary-foreground hover:opacity-95 gap-2">
+                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {t("sendToCura")}
+                </Button>
+              </div>
 
-      {/* Health Timeline */}
-      <section className="mb-6">
-        <h3 className="mb-3 text-lg font-semibold">{t("timelineTitle")}</h3>
-        {loading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
-          </div>
-        ) : timeline.length === 0 ? (
-          <Card className="p-6 text-center text-sm text-muted-foreground shadow-card">{t("noTimeline")}</Card>
-        ) : (
-          <div className="space-y-2">
-            {timeline.map((ev) => {
-              const text = ev.content[lang] || ev.content.en || "";
-              return (
-                <Card key={ev.id} className="flex items-start gap-3 p-4 shadow-card transition-base hover:shadow-elevated">
-                  <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", eventColor(ev.event_type))}>
-                    {eventIcon(ev.event_type)}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t(`evt_${ev.event_type}` as any)}
-                      </p>
-                      <span className="text-xs text-muted-foreground">{timeAgo(ev.created_at, lang)}</span>
+              {aiLoading && (
+                <div className="flex items-center gap-3 rounded-xl bg-accent-soft p-4 text-sm text-accent">
+                  <span className="ai-dot" /><span className="ai-dot" /><span className="ai-dot" />
+                  <span className="ml-1 text-muted-foreground">{t("loading")}</span>
+                </div>
+              )}
+
+              {aiResponse && !aiLoading && (
+                <div className="rounded-xl border border-accent/20 bg-accent-soft p-4 animate-fade-in-up">
+                  <div className="flex items-start gap-2.5">
+                    <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full gradient-primary text-primary-foreground shadow-floating">
+                      <Bot className="h-3.5 w-3.5" />
                     </div>
-                    <p className="mt-1 text-sm text-foreground">{text}</p>
-                    {ev.content.flagged === "true" && (
-                      <Badge className="mt-2 bg-warning/15 text-warning border-0 text-xs">⚠ {lang === "es" ? "Marcado" : "Flagged"}</Badge>
-                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-accent">Cura AI</p>
+                      <p className="mt-1 text-sm leading-relaxed text-foreground">{aiResponse}</p>
+                      {aiTimestamp && (
+                        <p className="mt-2 text-[11px] text-muted-foreground">{timeAgo(aiTimestamp, lang)}</p>
+                      )}
+                    </div>
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </section>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button onClick={handleFlag} disabled={aiFlagged} variant="outline" size="sm" className="gap-1.5 border-orange/30 text-orange hover:bg-orange-soft hover:text-orange">
+                      <Flag className="h-3.5 w-3.5" />
+                      {aiFlagged ? `✓ ${t("flagged")}` : `${t("flagForDoctor")} 🚩`}
+                    </Button>
+                    <Button onClick={handleSave} disabled={aiSaved || aiFlagged} variant="outline" size="sm" className="gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {aiSaved ? `✓ ${t("savedToTimeline")}` : `${t("saveToTimeline")} ✓`}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
 
-      {/* Upcoming appointments */}
-      <section className="mb-6">
-        <h3 className="mb-3 text-lg font-semibold">{t("upcomingAppointments")}</h3>
-        {loading ? (
-          <Skeleton className="h-20 w-full rounded-xl" />
-        ) : appointments.length === 0 ? (
-          <Card className="p-6 text-center text-sm text-muted-foreground shadow-card">{t("noAppointments")}</Card>
-        ) : (
-          <div className="space-y-2">
-            {appointments.map((appt) => (
-              <Card key={appt.id} className="p-4 shadow-card">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
+          {/* Timeline */}
+          <Card className="overflow-hidden border-border/60 shadow-card">
+            <div className="border-b border-border px-6 py-4">
+              <h3 className="text-lg font-bold">{t("timelineTitle")}</h3>
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {(["all", "checkins", "ai", "appts", "rides"] as FilterKey[]).map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => setFilter(k)}
+                    className={cn(
+                      "rounded-full px-3 py-1 text-xs font-medium transition-base",
+                      filter === k
+                        ? "bg-primary text-primary-foreground shadow-card"
+                        : "bg-secondary text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {t(`filter_${k}` as any)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4">
+              {loading ? (
+                <div className="space-y-2">
+                  {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+                </div>
+              ) : filteredTimeline.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">{t("noTimeline")}</p>
+              ) : (
+                <ul className="space-y-2">
+                  {filteredTimeline.map((ev) => {
+                    const text = (ev.content[lang] || ev.content.en || "").slice(0, 140);
+                    const style = eventStyle(ev.event_type);
+                    return (
+                      <li
+                        key={ev.id}
+                        className={cn("flex items-start gap-3 rounded-lg border-l-4 bg-secondary/30 p-3.5 transition-base hover:bg-secondary/60", style.border)}
+                      >
+                        <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", style.dot)}>
+                          {eventIcon(ev.event_type)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                              {t(`evt_${ev.event_type}` as any)}
+                            </p>
+                            <span className="text-xs text-muted-foreground">{timeAgo(ev.created_at, lang)}</span>
+                          </div>
+                          <p className="mt-1 text-sm text-foreground">{text}</p>
+                          {ev.content.flagged === "true" && (
+                            <Badge className="mt-2 border-0 bg-orange-soft text-orange text-xs hover:bg-orange-soft">⚠ {lang === "es" ? "Marcado" : "Flagged"}</Badge>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </Card>
+        </div>
+
+        {/* RIGHT COLUMN */}
+        <div className="space-y-6">
+          {/* Upcoming Appointments */}
+          <Card className="border-border/60 p-5 shadow-card">
+            <h3 className="mb-3 text-base font-bold">{t("upcomingAppointments")}</h3>
+            {loading ? (
+              <Skeleton className="h-20 w-full rounded-lg" />
+            ) : appointments.length === 0 ? (
+              <div className="flex flex-col items-center gap-2 py-6 text-center">
+                <Calendar className="h-8 w-8 text-muted-foreground/50" />
+                <p className="text-sm text-muted-foreground">{t("noAppointments")}</p>
+              </div>
+            ) : (
+              <ul className="space-y-2.5">
+                {appointments.map((appt) => (
+                  <li key={appt.id} className="rounded-lg border border-border p-3">
                     <p className="text-sm font-semibold">
                       {new Date(appt.scheduled_at).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", {
                         weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
                       })}
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">{doctorName}</p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      <Badge variant="outline" className="text-xs gap-1">
-                        {appt.appointment_type === "telehealth" ? <Video className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
-                        {appt.appointment_type === "telehealth" ? t("telehealth") : t("inPerson")}
-                      </Badge>
-                      <Badge className={cn("text-xs border-0", appt.status === "confirmed" ? "bg-success/15 text-success" : "bg-primary-soft text-primary")}>
-                        {t(`status_${appt.status}` as any)}
-                      </Badge>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{doctorName}</p>
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap gap-1.5">
+                        <Badge variant="outline" className="gap-1 text-xs">
+                          {appt.appointment_type === "telehealth" ? <Video className="h-3 w-3" /> : <Phone className="h-3 w-3" />}
+                          {appt.appointment_type === "telehealth" ? t("telehealth") : t("inPerson")}
+                        </Badge>
+                        <Badge className={cn("border-0 text-xs", appt.status === "confirmed" ? "bg-success/15 text-success hover:bg-success/15" : "bg-primary-soft text-primary hover:bg-primary-soft")}>
+                          {t(`status_${appt.status}` as any)}
+                        </Badge>
+                      </div>
+                      {appt.appointment_type === "telehealth" && (
+                        <Button asChild size="sm" className="gradient-primary text-primary-foreground gap-1">
+                          <a href="#"><Video className="h-3 w-3" />{t("joinCall")}</a>
+                        </Button>
+                      )}
                     </div>
-                  </div>
-                  {appt.appointment_type === "telehealth" && (
-                    <Button asChild size="sm" className="shrink-0 gradient-primary text-primary-foreground">
-                      <a href="#">{t("joinCall")}</a>
-                    </Button>
-                  )}
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Ride request */}
-      <section className="mb-6">
-        <h3 className="mb-3 text-lg font-semibold">{t("requestRide")}</h3>
-        <Card className="p-5 shadow-card">
-          <form onSubmit={handleRideSubmit} className="space-y-3">
-            <div>
-              <Label htmlFor="rdate" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("rideDate")}</Label>
-              <Input id="rdate" type="date" min={new Date().toISOString().slice(0, 10)} value={rideDate} onChange={(e) => setRideDate(e.target.value)} required />
-            </div>
-            <div>
-              <Label htmlFor="pickup" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("pickupAddress")}</Label>
-              <Input id="pickup" value={ridePickup} onChange={(e) => setRidePickup(e.target.value)} placeholder="123 Main St, Sells, AZ" required />
-            </div>
-            <div>
-              <Label htmlFor="dest" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("destination")}</Label>
-              <Input id="dest" value={rideDest} onChange={(e) => setRideDest(e.target.value)} required />
-            </div>
-            <Button type="submit" disabled={rideSubmitting} className="w-full gradient-primary text-primary-foreground">
-              {rideSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : t("submitRide")}
-            </Button>
-          </form>
-
-          {rides.length > 0 && (
-            <div className="mt-5 border-t border-border pt-4">
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{t("yourRides")}</p>
-              <div className="space-y-2">
-                {rides.map((r) => (
-                  <div key={r.id} className="flex items-center justify-between rounded-lg bg-muted/40 p-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{r.destination}</p>
-                      <p className="text-xs text-muted-foreground">{new Date(r.requested_date).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", { month: "short", day: "numeric" })}</p>
-                    </div>
-                    <Badge className={cn("border-0 text-xs", r.status === "open" ? "bg-amber-100 text-amber-700" : r.status === "matched" ? "bg-primary-soft text-primary" : "bg-success/15 text-success")}>
-                      {t(`ride_${r.status}` as any)}
-                    </Badge>
-                  </div>
+                  </li>
                 ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* Request a Ride */}
+          <Card className="border-border/60 p-5 shadow-card">
+            <h3 className="mb-1 text-base font-bold flex items-center gap-1.5"><Car className="h-4 w-4 text-accent" />{t("needRide")}</h3>
+            <form onSubmit={handleRideSubmit} className="mt-3 space-y-3">
+              <div>
+                <Label htmlFor="rdate" className="text-xs font-semibold text-muted-foreground">{t("rideDate")}</Label>
+                <Input id="rdate" type="date" min={new Date().toISOString().slice(0, 10)} value={rideDate} onChange={(e) => setRideDate(e.target.value)} required />
               </div>
-            </div>
-          )}
-        </Card>
-      </section>
+              <div>
+                <Label htmlFor="pickup" className="text-xs font-semibold text-muted-foreground">{t("pickupAddress")}</Label>
+                <Input id="pickup" value={ridePickup} onChange={(e) => setRidePickup(e.target.value)} placeholder="123 Main St, Sells, AZ" required />
+              </div>
+              <div>
+                <Label htmlFor="dest" className="text-xs font-semibold text-muted-foreground">{t("destination")}</Label>
+                <Input id="dest" value={rideDest} onChange={(e) => setRideDest(e.target.value)} required />
+              </div>
+              <Button type="submit" disabled={rideSubmitting} className="w-full gradient-primary text-primary-foreground">
+                {rideSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : t("submitRide")}
+              </Button>
+            </form>
+          </Card>
+
+          {/* Medications */}
+          <Card className="border-border/60 p-5 shadow-card">
+            <h3 className="mb-3 text-base font-bold flex items-center gap-1.5"><Pill className="h-4 w-4 text-emerald-600" />{t("yourMedications")}</h3>
+            {loading ? (
+              <Skeleton className="h-16 w-full rounded-lg" />
+            ) : !patient?.medications?.length ? (
+              <p className="py-3 text-sm text-muted-foreground">—</p>
+            ) : (
+              <ul className="space-y-2">
+                {patient.medications.map((m, i) => {
+                  const id = `med-${i}`;
+                  return (
+                    <li key={id} className="flex items-start justify-between gap-3 rounded-lg bg-secondary/40 p-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold">{m.name}</p>
+                        <p className="mt-0.5 text-xs text-muted-foreground">{m.dosage} · {m.frequency}</p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Checkbox
+                          id={id}
+                          checked={!!takenMeds[id]}
+                          onCheckedChange={(v) => setTakenMeds((p) => ({ ...p, [id]: !!v }))}
+                        />
+                        <Label htmlFor={id} className="cursor-pointer text-[11px] text-muted-foreground">{t("markTaken")}</Label>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+        </div>
+      </div>
 
       {/* SMS Simulator */}
-      <section className="mb-6">
-        <Card className="shadow-card">
+      <section className="mt-6">
+        <Card className="overflow-hidden border-border/60 shadow-card">
           <button
             onClick={() => setSmsOpen(!smsOpen)}
-            className="flex w-full items-center justify-between gap-3 p-4 text-left transition-base hover:bg-muted/40"
+            className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-base hover:bg-muted/40"
           >
             <div className="flex items-center gap-2">
-              <Phone className="h-4 w-4 text-accent" />
+              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-orange-soft text-orange">📱</span>
               <div>
-                <p className="text-sm font-semibold">{t("smsTitle")}</p>
-                <p className="text-xs text-muted-foreground">{t("smsSubtitle")}</p>
+                <p className="text-sm font-bold">{t("smsModeTitle")}</p>
+                <p className="text-xs text-muted-foreground">{t("smsModeSubtitle")}</p>
               </div>
             </div>
             <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-base", smsOpen && "rotate-180")} />
           </button>
           {smsOpen && (
-            <div className="border-t border-border bg-muted/30 p-6">
-              <div className="mx-auto max-w-[320px] rounded-3xl border-4 border-foreground/80 bg-card p-3 shadow-floating">
-                <div className="mb-2 text-center text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Cura AI · SMS</div>
-                <div className="space-y-2 text-sm">
-                  <SmsBubble received>Cura AI: Hola María, ¿cómo te sientes hoy? / Hello Maria, how are you feeling today?</SmsBubble>
-                  <SmsBubble>Me duele la cabeza y estoy mareada</SmsBubble>
-                  <SmsBubble received>Cura AI: Entendido María. Basándome en tu historial, esto puede estar relacionado con tu presión. Descansa y toma agua. ¿Quieres que avise al Dr. Chen? Responde SÍ o NO</SmsBubble>
+            <div className="border-t border-border bg-secondary/30 p-6">
+              <div className="mx-auto max-w-[340px] rounded-[2rem] border-[6px] border-foreground/85 bg-card p-3 shadow-floating">
+                <div className="mb-3 flex items-center justify-between rounded-full bg-secondary px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <span>Cura AI SMS</span>
+                  <span>520-555-0100</span>
+                </div>
+                <div className="space-y-2">
+                  <SmsBubble received>Cura AI: Hola María, ¿cómo te sientes hoy?</SmsBubble>
+                  <SmsBubble>Me duelen los pies y estoy cansada</SmsBubble>
+                  <SmsBubble received>Cura AI: Entendido María. Basándome en tu historial con diabetes, la hinchazón en los pies necesita atención. ¿Quieres que avise al Dr. Chen? Responde SÍ o NO</SmsBubble>
                   <SmsBubble>SÍ</SmsBubble>
-                  <SmsBubble received>Cura AI: ✓ El Dr. Chen ha sido notificado. Te contactará pronto. Recuerda tomar tu Lisinopril esta noche.</SmsBubble>
+                  <SmsBubble received>✓ Dr. Chen notificado. Recuerda tomar tu Metformin esta noche.</SmsBubble>
                 </div>
               </div>
               <p className="mt-4 text-center text-xs text-muted-foreground">{t("poweredBy")}</p>
@@ -444,12 +543,34 @@ export default function PatientDashboard() {
   );
 }
 
+function BannerStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white/15 px-3 py-2 backdrop-blur-sm">
+      <p className="text-[11px] uppercase tracking-wide opacity-80">{label}</p>
+      <p className="mt-0.5 text-sm font-bold">{value}</p>
+    </div>
+  );
+}
+
+function NotificationBell({ count }: { count: number }) {
+  return (
+    <button className="relative inline-flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-base hover:bg-secondary hover:text-foreground" aria-label="Notifications">
+      <Bell className="h-4 w-4" />
+      {count > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-orange px-1 text-[10px] font-bold text-orange-foreground">
+          {count}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function SmsBubble({ children, received = false }: { children: React.ReactNode; received?: boolean }) {
   return (
     <div className={cn("flex", received ? "justify-start" : "justify-end")}>
       <div className={cn(
         "max-w-[80%] rounded-2xl px-3 py-2 text-xs leading-snug",
-        received ? "rounded-bl-sm bg-muted text-foreground" : "rounded-br-sm bg-accent text-accent-foreground"
+        received ? "rounded-bl-sm bg-secondary text-foreground" : "rounded-br-sm bg-accent text-accent-foreground"
       )}>
         {children}
       </div>
