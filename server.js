@@ -143,15 +143,11 @@ app.post('/api/ai-advice', async (req, res) => {
     try {
       const { patientId, structuredInput, language } = req.body;
   
-      // DEBUG
       const { data: testPatient, error: testError } = await supabase
         .from('patients')
         .select('*')
         .eq('id', patientId)
         .single();
-      console.log('DEBUG patientId:', patientId);
-      console.log('DEBUG testPatient:', JSON.stringify(testPatient));
-      console.log('DEBUG testError:', JSON.stringify(testError));
       if (testError || !testPatient) {
         return res.status(404).json({
           error: 'Patient not found',
@@ -160,9 +156,39 @@ app.post('/api/ai-advice', async (req, res) => {
           code: testError?.code
         });
       }
-      // END DEBUG
-  
-      const { patient, timeline, appointments } = await getPatientContext(patientId);
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name, preferred_language')
+        .eq('id', patientId)
+        .single();
+
+      const { data: doctorProfile } = testPatient?.assigned_doctor_id ? await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', testPatient.assigned_doctor_id)
+        .single() : { data: null };
+
+      const { data: timeline } = await supabase
+        .from('health_timeline')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      const { data: appointments } = await supabase
+        .from('appointments')
+        .select('*')
+        .eq('patient_id', patientId)
+        .order('scheduled_at', { ascending: false })
+        .limit(3);
+
+      const patient = testPatient ? {
+        ...testPatient,
+        profiles: profile,
+        assigned_doctor: doctorProfile
+      } : null;
+
       const context = buildContextString(patient, timeline, appointments);
       const respondInLang = language === 'es' ? 'Spanish' : 'English';
   
@@ -187,6 +213,8 @@ app.post('/api/ai-advice', async (req, res) => {
   - Do NOT include any disclaimers about being an AI
       `.trim();
   
+      console.log('[ai-advice] calling AI', { patientId, language, respondInLang });
+      console.log('[ai-advice] prompt chars', prompt.length);
       const response = await callAI(prompt, 300);
   
       const flagged =
