@@ -263,21 +263,32 @@ export default function DriverDashboard() {
         <section className="mb-6">
           <h3 className="mb-3 text-lg font-semibold">{t("yourActiveRides")}</h3>
           <div className="space-y-2">
-            {acceptedRides.map((r) => (
-              <Card key={r.id} className="border-l-4 border-l-primary p-4 shadow-card">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold">{r.patient_name}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">{r.pickup_address} → {r.destination}</p>
-                    <p className="mt-0.5 text-xs text-muted-foreground">{new Date(r.requested_date).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", { month: "short", day: "numeric" })}</p>
+            {acceptedRides.map((r) => {
+              const mapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(r.pickup_address)}&destination=${encodeURIComponent(r.destination)}&travelmode=driving`;
+              return (
+                <Card key={r.id} className="border-l-4 border-l-primary p-4 shadow-card">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold">{r.patient_name}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{r.pickup_address} → {r.destination}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">{new Date(r.requested_date).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", { month: "short", day: "numeric" })}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant="outline" className="gap-1.5">
+                        <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
+                          <Navigation className="h-4 w-4" />
+                          {lang === "es" ? "Ver ruta" : "Open in Maps"}
+                        </a>
+                      </Button>
+                      <Button onClick={() => completeRide(r.id)} disabled={acting === r.id} size="sm" className="gradient-primary text-primary-foreground gap-1.5">
+                        {acting === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                        {t("markComplete")}
+                      </Button>
+                    </div>
                   </div>
-                  <Button onClick={() => completeRide(r.id)} disabled={acting === r.id} size="sm" className="gradient-primary text-primary-foreground gap-1.5">
-                    {acting === r.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                    {t("markComplete")}
-                  </Button>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </div>
         </section>
       )}
