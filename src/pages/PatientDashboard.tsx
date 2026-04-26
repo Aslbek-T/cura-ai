@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 import { StructuredAiInput, StructuredInputValue } from "@/components/StructuredAiInput";
 import { calculateAge } from "@/lib/i18n";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+
 interface PatientRow {
   id: string;
   conditions: string[];
@@ -175,7 +177,7 @@ export default function PatientDashboard() {
 
     try {
       if (!user) throw new Error("Missing user");
-      const res = await fetch("http://localhost:3001/api/ai-advice", {
+      const res = await fetch(`${API_BASE}/api/ai-advice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

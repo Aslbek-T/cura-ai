@@ -21,6 +21,8 @@ import {
 import { cn } from "@/lib/utils";
 import { AddPatientSheet } from "@/components/AddPatientSheet";
 
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001";
+
 interface PatientWithProfile {
   id: string;
   full_name: string;
@@ -158,7 +160,7 @@ export default function DoctorDashboard() {
       .limit(5);
     setActiveEvents(data ?? []);
     try {
-      const res = await fetch("http://localhost:3001/api/ai-summary", {
+      const res = await fetch(`${API_BASE}/api/ai-summary`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ patientId: p.id }),
@@ -178,7 +180,7 @@ export default function DoctorDashboard() {
     setBriefLoading(true);
     setBriefText(null);
     try {
-      const res = await fetch("http://localhost:3001/api/ai-brief", {
+      const res = await fetch(`${API_BASE}/api/ai-brief`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ patientId: a.patient_id, appointmentId: a.id }),

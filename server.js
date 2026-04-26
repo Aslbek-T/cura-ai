@@ -25,13 +25,14 @@ let twilioClient = null;
 
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_ANON_KEY
+  process.env.SUPABASE_SERVICE_KEY
 );
 
 // ─────────────────────────────────────────────
 // AI HELPER — OpenRouter free tier
 // ─────────────────────────────────────────────
 async function callAI(prompt, maxTokens = 400) {
+  console.log('[callAI] Sending request to OpenRouter, model=google/gemma-3-4b-it:free, apiKeyPresent=', !!process.env.OPENROUTER_API_KEY);
   const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
     method: 'POST',
     headers: {
@@ -46,8 +47,13 @@ async function callAI(prompt, maxTokens = 400) {
       max_tokens: maxTokens
     })
   });
+  console.log('[callAI] OpenRouter HTTP status:', res.status);
   const data = await res.json();
-  if (data.error) throw new Error(data.error.message);
+  console.log('[callAI] OpenRouter response body:', JSON.stringify(data));
+  if (data.error) {
+    console.log('[callAI] THROW — OpenRouter returned error:', JSON.stringify(data.error));
+    throw new Error(data.error.message);
+  }
   return data.choices[0].message.content;
 }
 
@@ -126,59 +132,83 @@ ${recentEvents || 'No recent history'}
 // POST /api/ai-advice
 // ─────────────────────────────────────────────
 app.post('/api/ai-advice', async (req, res) => {
-  try {
-    const { patientId, structuredInput, language } = req.body;
-    const { patient, timeline, appointments } = await getPatientContext(patientId);
-    const context = buildContextString(patient, timeline, appointments);
-    const respondInLang = language === 'es' ? 'Spanish' : 'English';
+    try {
+      const { patientId, structuredInput, language } = req.body;
+      
+      console.log('ai-advice called with patientId:', patientId);
+      
+      // Test direct query first
+      const { data: directPatient, error: directError } = await supabase
+        .from('patients')
+        .select('*')
+        .eq('id', patientId)
+        .single();
+      
+      console.log('directPatient:', JSON.stringify(directPatient));
+      console.log('directError:', JSON.stringify(directError));
+  
+      if (!directPatient) {
+        console.log('[ai-advice] RETURN 404 — directPatient is null. directError:', JSON.stringify(directError));
+        return res.status(404).json({
+          error: `Patient not found. ID: ${patientId}, DB error: ${directError?.message}`
+        });
+      }
 
-    const prompt = `
-You are Cura AI, a compassionate chronic care assistant for rural Arizona patients.
-You are NOT a doctor and cannot diagnose. Provide supportive, personalized guidance only.
+      console.log('[ai-advice] Patient found, calling getPatientContext...');
+      const { patient, timeline, appointments } = await getPatientContext(patientId);
+      const context = buildContextString(patient, timeline, appointments);
+      const respondInLang = language === 'es' ? 'Spanish' : 'English';
+  
+      const prompt = `
+  You are Cura AI, a compassionate chronic care assistant for rural Arizona patients.
+  You are NOT a doctor and cannot diagnose. Provide supportive, personalized guidance only.
+  
+  PATIENT CONTEXT:
+  ${context}
+  
+  PATIENT REPORT:
+  ${structuredInput}
+  
+  INSTRUCTIONS:
+  - Respond in ${respondInLang}
+  - Keep response under 120 words
+  - Reference the patient's specific conditions and medications by name
+  - If symptoms are severe (7+ out of 10) or include chest pain or shortness of breath, strongly advise contacting their doctor or calling 911
+  - Be warm and supportive, not clinical
+  - End with one concrete next step
+  - Do NOT start your response with "I"
+  - Do NOT include any disclaimers about being an AI
+      `.trim();
+  
+      console.log('[ai-advice] Calling callAI...');
+      const response = await callAI(prompt, 300);
+      console.log('[ai-advice] callAI returned successfully, response length:', response?.length);
 
-PATIENT CONTEXT:
-${context}
-
-PATIENT REPORT:
-${structuredInput}
-
-INSTRUCTIONS:
-- Respond in ${respondInLang}
-- Keep response under 120 words
-- Reference the patient's specific conditions and medications by name
-- If symptoms are severe (7+ out of 10) or include chest pain or shortness of breath, strongly advise contacting their doctor or calling 911
-- Be warm and supportive, not clinical
-- End with one concrete next step
-- Do NOT start your response with "I"
-- Do NOT include any disclaimers about being an AI
-    `.trim();
-
-    const response = await callAI(prompt, 300);
-
-    const flagged =
-      structuredInput.toLowerCase().includes('chest pain') ||
-      structuredInput.toLowerCase().includes('shortness of breath') ||
-      structuredInput.includes('severity: 9') ||
-      structuredInput.includes('severity: 10');
-
-    await supabase.from('health_timeline').insert({
-      patient_id: patientId,
-      event_type: 'ai_advice',
-      content: {
-        response_en: language === 'en' ? response : null,
-        response_es: language === 'es' ? response : null,
-        flagged,
-        structured_input: structuredInput
-      },
-      created_by: null
-    });
-
-    res.json({ response, flagged });
-  } catch (err) {
-    console.error('ai-advice error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
+      const flagged =
+        structuredInput.toLowerCase().includes('chest pain') ||
+        structuredInput.toLowerCase().includes('shortness of breath') ||
+        structuredInput.includes('severity: 9') ||
+        structuredInput.includes('severity: 10');
+  
+      await supabase.from('health_timeline').insert({
+        patient_id: patientId,
+        event_type: 'ai_advice',
+        content: {
+          response_en: language === 'en' ? response : null,
+          response_es: language === 'es' ? response : null,
+          flagged,
+          structured_input: structuredInput
+        },
+        created_by: null
+      });
+  
+      res.json({ response, flagged });
+    } catch (err) {
+      console.error('[ai-advice] CATCH — error thrown:', err.message);
+      console.error('[ai-advice] Stack:', err.stack);
+      res.status(500).json({ error: err.message });
+    }
+  });
 
 // ─────────────────────────────────────────────
 // ENDPOINT 2: PATIENT SUMMARY FOR DOCTOR
