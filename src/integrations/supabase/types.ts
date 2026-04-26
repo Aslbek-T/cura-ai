@@ -14,16 +14,284 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      appointments: {
+        Row: {
+          ai_brief: string | null
+          appointment_type: string
+          created_at: string
+          doctor_id: string
+          id: string
+          notes: string | null
+          patient_id: string
+          scheduled_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          ai_brief?: string | null
+          appointment_type?: string
+          created_at?: string
+          doctor_id: string
+          id?: string
+          notes?: string | null
+          patient_id: string
+          scheduled_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          ai_brief?: string | null
+          appointment_type?: string
+          created_at?: string
+          doctor_id?: string
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_doctor_id_fkey"
+            columns: ["doctor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      health_timeline: {
+        Row: {
+          content: Json
+          created_at: string
+          event_type: string
+          id: string
+          patient_id: string
+        }
+        Insert: {
+          content?: Json
+          created_at?: string
+          event_type: string
+          id?: string
+          patient_id: string
+        }
+        Update: {
+          content?: Json
+          created_at?: string
+          event_type?: string
+          id?: string
+          patient_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "health_timeline_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patients: {
+        Row: {
+          address: string | null
+          allergies: string[]
+          assigned_doctor_id: string | null
+          conditions: string[]
+          created_at: string
+          emergency_contact: string | null
+          id: string
+          medications: Json
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          allergies?: string[]
+          assigned_doctor_id?: string | null
+          conditions?: string[]
+          created_at?: string
+          emergency_contact?: string | null
+          id: string
+          medications?: Json
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          allergies?: string[]
+          assigned_doctor_id?: string | null
+          conditions?: string[]
+          created_at?: string
+          emergency_contact?: string | null
+          id?: string
+          medications?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patients_assigned_doctor_id_fkey"
+            columns: ["assigned_doctor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "patients_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          date_of_birth: string | null
+          email: string | null
+          full_name: string
+          id: string
+          phone: string | null
+          preferred_language: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          full_name?: string
+          id: string
+          phone?: string | null
+          preferred_language?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          date_of_birth?: string | null
+          email?: string | null
+          full_name?: string
+          id?: string
+          phone?: string | null
+          preferred_language?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ride_requests: {
+        Row: {
+          created_at: string
+          destination: string
+          id: string
+          matched_driver_id: string | null
+          notes: string | null
+          patient_id: string
+          pickup_address: string
+          requested_date: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          destination: string
+          id?: string
+          matched_driver_id?: string | null
+          notes?: string | null
+          patient_id: string
+          pickup_address: string
+          requested_date: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          destination?: string
+          id?: string
+          matched_driver_id?: string | null
+          notes?: string | null
+          patient_id?: string
+          pickup_address?: string
+          requested_date?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ride_requests_matched_driver_id_fkey"
+            columns: ["matched_driver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ride_requests_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      volunteer_credits: {
+        Row: {
+          created_at: string
+          credits: number
+          driver_id: string
+          total_rides_completed: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          credits?: number
+          driver_id: string
+          total_rides_completed?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          credits?: number
+          driver_id?: string
+          total_rides_completed?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "volunteer_credits_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      get_current_user_role: {
+        Args: never
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "patient" | "doctor" | "volunteer_driver" | "admin"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +418,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["patient", "doctor", "volunteer_driver", "admin"],
+    },
   },
 } as const
