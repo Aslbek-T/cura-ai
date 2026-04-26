@@ -299,6 +299,12 @@ export const translations = {
   driverWelcome: { en: "Welcome", es: "Bienvenido" },
   yourActiveRides: { en: "Your Active Rides", es: "Tus Viajes Activos" },
   liveLabel: { en: "Live", es: "En vivo" },
+  driver_currentBadge: { en: "Current badge", es: "Insignia actual" },
+  driver_moreRidesTo: { en: "more rides to", es: "viajes más para" },
+  driver_topBadgeUnlocked: { en: "Top badge unlocked!", es: "¡Insignia máxima alcanzada!" },
+  driver_pickup: { en: "Pickup", es: "Recoger" },
+  driver_openInMaps: { en: "Open in Maps", es: "Ver ruta" },
+  driver_you: { en: "you", es: "tú" },
   noRidesEmpty: {
     en: "No rides available right now. We'll notify you when a patient needs help!",
     es: "No hay viajes disponibles ahora. Te avisaremos cuando un paciente necesite ayuda.",

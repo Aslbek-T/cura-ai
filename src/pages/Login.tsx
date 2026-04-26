@@ -11,7 +11,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, Sparkles, Eye, EyeOff, ArrowLeft } from "lucide-react";
-import { seedDemoData, DEMO_ACCOUNTS } from "@/lib/seedDemo";
+import { seedDemoData } from "@/lib/seedDemo";
 
 export default function Login() {
   const { t, lang } = useLanguage();
@@ -53,9 +53,9 @@ export default function Login() {
     }
   };
 
-  const fillDemo = (which: keyof typeof DEMO_ACCOUNTS) => {
-    setEmail(DEMO_ACCOUNTS[which].email);
-    setPassword(DEMO_ACCOUNTS[which].password);
+  const fillDemoExact = (demoEmail: string) => {
+    setEmail(demoEmail);
+    setPassword("Demo1234!");
   };
 
   return (
@@ -136,13 +136,9 @@ export default function Login() {
 
             <div className="space-y-2">
               <div className="grid grid-cols-3 gap-2">
-                {([
-                  { key: "patient" as const, label: t("demoPatient") },
-                  { key: "doctor" as const, label: t("demoDoctor") },
-                  { key: "driver" as const, label: t("demoDriver") },
-                ]).map((d) => (
-                  <DemoButton key={d.key} label={d.label} onClick={() => fillDemo(d.key)} />
-                ))}
+                <DemoButton label={"Patient (Maria)"} onClick={() => fillDemoExact("maria@cura.demo")} />
+                <DemoButton label={"Doctor (Dr. Chen)"} onClick={() => fillDemoExact("drchen@cura.demo")} />
+                <DemoButton label={"Driver (Carlos)"} onClick={() => fillDemoExact("carlos@cura.demo")} />
               </div>
               <Button onClick={handleSeed} variant="ghost" className="w-full gap-2 text-xs text-muted-foreground hover:text-foreground" disabled={seeding} size="sm">
                 {seeding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-accent" />}

@@ -1,10 +1,10 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
-import { useLanguage } from "@/contexts/LanguageContext";
 import { Send, Loader2 } from "lucide-react";
+import { useLanguage } from "@/contexts/LanguageContext";
 import { cn } from "@/lib/utils";
 
 export interface StructuredInputValue {
@@ -27,32 +27,28 @@ const FEELINGS = [
   { key: "verybad", emoji: "😣" },
 ] as const;
 
-const SYMPTOMS_EN = [
+const SYMPTOMS = [
   { id: "headache", emoji: "🤕", en: "Headache", es: "Dolor de cabeza" },
   { id: "dizziness", emoji: "😵", en: "Dizziness", es: "Mareo" },
   { id: "shortness", emoji: "😮‍💨", en: "Shortness of breath", es: "Falta de aire" },
   { id: "chest_pain", emoji: "🫀", en: "Chest pain", es: "Dolor de pecho" },
-  { id: "swollen", emoji: "🦶", en: "Swollen feet/legs", es: "Pies/piernas hinchadas" },
-  { id: "fatigue", emoji: "😴", en: "Extreme fatigue", es: "Fatiga extrema" },
+  { id: "swollen", emoji: "🦶", en: "Swollen feet", es: "Pies hinchados" },
+  { id: "fatigue", emoji: "😴", en: "Fatigue", es: "Fatiga" },
   { id: "nausea", emoji: "🤢", en: "Nausea", es: "Náusea" },
   { id: "blurred", emoji: "👁️", en: "Blurred vision", es: "Visión borrosa" },
   { id: "thirst", emoji: "💧", en: "Excessive thirst", es: "Sed excesiva" },
   { id: "fever", emoji: "🔥", en: "Fever", es: "Fiebre" },
-  { id: "sweating", emoji: "😰", en: "Sweating", es: "Sudoración" },
-  { id: "joint_pain", emoji: "🦴", en: "Joint pain", es: "Dolor articular" },
   { id: "med_side", emoji: "💊", en: "Medication side effect", es: "Efecto secundario" },
-  { id: "anxiety", emoji: "😰", en: "Anxiety/worry", es: "Ansiedad/preocupación" },
-  { id: "other", emoji: "❓", en: "Other", es: "Otro" },
-];
+  { id: "anxiety", emoji: "😰", en: "Anxiety", es: "Ansiedad" },
+] as const;
 
-const REACTIONS_EN = [
-  { id: "nausea_after", en: "Nausea after taking", es: "Náusea al tomar" },
-  { id: "dizzy_after", en: "Dizziness after taking", es: "Mareo al tomar" },
-  { id: "stomach", en: "Stomach upset", es: "Malestar estomacal" },
-  { id: "rash", en: "Rash or itching", es: "Erupción o picazón" },
-  { id: "none", en: "No reactions", es: "Sin reacciones" },
-  { id: "other", en: "Other reaction", es: "Otra reacción" },
-];
+const REACTIONS = [
+  "Nausea after taking",
+  "Dizziness after taking",
+  "Stomach upset",
+  "Rash",
+  "No reactions",
+] as const;
 
 interface Props {
   patientName: string;
@@ -63,13 +59,16 @@ interface Props {
   onSubmit: (val: StructuredInputValue) => void;
 }
 
-export function StructuredAiInput({ patientName, patientAge, conditions, medications, loading, onSubmit }: Props) {
+export function StructuredAiInput({ medications, loading, onSubmit }: Props) {
   const { lang, t } = useLanguage();
-
   const [feeling, setFeeling] = useState<string>("");
+  const [feelingGood, setFeelingGood] = useState(false);
   const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [otherSymptomSelected, setOtherSymptomSelected] = useState(false);
+  const [otherSymptomText, setOtherSymptomText] = useState("");
   const [severity, setSeverity] = useState<number>(5);
   const [medAdherence, setMedAdherence] = useState<Record<string, boolean | undefined>>({});
+  const [tookAllMeds, setTookAllMeds] = useState(false);
   const [reactions, setReactions] = useState<string[]>([]);
   const [notes, setNotes] = useState("");
 
@@ -81,44 +80,70 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
   const sevLabel = severity <= 3 ? t("nav_sev_mild") : severity <= 6 ? t("nav_sev_mod") : t("nav_sev_severe");
 
   const anyMedAnswered = Object.values(medAdherence).some((v) => v !== undefined);
-  const canSubmit = feeling && symptoms.length > 0 && !loading;
-
-  const symptomLabel = (id: string) => {
-    const s = SYMPTOMS_EN.find((x) => x.id === id);
-    return s ? s[lang] : id;
-  };
-
-  const reactionLabel = (id: string) => {
-    const r = REACTIONS_EN.find((x) => x.id === id);
-    return r ? r[lang] : id;
-  };
+  const hasOtherSymptom = otherSymptomSelected && !!otherSymptomText.trim();
+  const canSubmit = (feelingGood || (feeling && (symptoms.length > 0 || hasOtherSymptom))) && !loading;
 
   const buildSummary = (): string => {
+    if (feelingGood) {
+      const respond = lang === "es" ? "Spanish" : "English";
+      return `Patient reports feeling good today with no symptoms. Medications taken as scheduled. No concerns to report. Please respond in ${respond} based on the patient's language preference.`;
+    }
+    const medsAnswered = medications
+      .filter((m) => typeof medAdherence[m.name] === "boolean")
+      .map((m) => `${m.name}: ${medAdherence[m.name] ? "Yes" : "No"}`);
+    const allTaken = tookAllMeds || (medications.length > 0 && medications.every((m) => medAdherence[m.name] === true));
+    const medsStr = medications.length === 0
+      ? "none"
+      : allTaken
+        ? "all taken"
+        : medsAnswered.length ? medsAnswered.join(", ") : "none";
+
+    const reactionsStr = reactions.length ? reactions.join(", ") : "none";
+    const notesStr = notes.trim() ? notes.trim() : "none";
     const feelingLabel = t(`nav_feeling_${feeling}` as any);
-    const ageStr = patientAge ? `, ${patientAge}${lang === "es" ? "a" : "y"}` : "";
-    const condStr = conditions.length ? conditions.join(", ") : (lang === "es" ? "ninguna" : "none");
-    const medsStr = medications.length
-      ? medications.map((m) => `${m.name} ${m.dosage} (${lang === "es" ? "tomado" : "taken"}: ${medAdherence[m.name] === true ? (lang === "es" ? "sí" : "yes") : medAdherence[m.name] === false ? "no" : "?"})`).join(", ")
-      : (lang === "es" ? "ninguno" : "none");
-    const symptomsStr = symptoms.map((s) => `${symptomLabel(s)} (${lang === "es" ? "severidad" : "severity"} ${severity}/10)`).join(", ");
-    const reactionsStr = reactions.length ? reactions.map(reactionLabel).join(", ") : (lang === "es" ? "ninguna" : "none");
-    const respond = lang === "es" ? "Responde en español." : "Respond in English.";
-    return `Patient: ${patientName}${ageStr}. Conditions: ${condStr}. Medications: ${medsStr}. Overall feeling: ${feelingLabel}. Symptoms reported: ${symptomsStr}. Medication reactions: ${reactionsStr}. Additional notes: ${notes || "none"}. ${respond}`;
+    const symptomLabels = symptoms.map((id) => {
+      const s = SYMPTOMS.find((x) => x.id === id);
+      return s ? s[lang] : id;
+    });
+    if (hasOtherSymptom) symptomLabels.push(otherSymptomText.trim());
+    const respond = lang === "es" ? "Spanish" : "English";
+    return `Patient feeling: ${feelingLabel}. Symptoms: ${symptomLabels.join(", ")}. Severity: ${severity}/10. Medications taken: ${medsStr}. Reactions: ${reactionsStr}. Notes: ${notesStr}. Please respond in ${respond} based on the patient's language preference.`;
   };
 
   const handleSubmit = () => {
     if (!canSubmit) return;
     const adherence: Record<string, boolean> = {};
     Object.entries(medAdherence).forEach(([k, v]) => { if (typeof v === "boolean") adherence[k] = v; });
+
+    if (feelingGood && medications.length > 0) {
+      medications.forEach((m) => { adherence[m.name] = true; });
+    }
     onSubmit({
-      feeling,
-      symptoms,
-      severity,
+      feeling: feelingGood ? "good" : feeling,
+      symptoms: feelingGood ? [] : [...symptoms, ...(hasOtherSymptom ? [otherSymptomText.trim()] : [])],
+      severity: feelingGood ? 1 : severity,
       medAdherence: adherence,
       reactions,
       notes,
       rawSummary: buildSummary(),
     });
+  };
+
+  const toggleSymptom = (id: string) => {
+    if (id === "other_free") {
+      setOtherSymptomSelected((p) => !p);
+      if (otherSymptomSelected) setOtherSymptomText("");
+      return;
+    }
+    setSymptoms((arr) => (arr.includes(id) ? arr.filter((x) => x !== id) : [...arr, id]));
+  };
+
+  const takeAllMeds = () => {
+    if (!medications.length) return;
+    const patch: Record<string, boolean> = {};
+    medications.forEach((m) => { patch[m.name] = true; });
+    setMedAdherence((p) => ({ ...p, ...patch }));
+    setTookAllMeds(true);
   };
 
   return (
@@ -135,8 +160,8 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
               className={cn(
                 "flex flex-col items-center gap-1 rounded-xl border-2 p-2.5 transition-base",
                 feeling === f.key
-                  ? "border-primary bg-primary-soft"
-                  : "border-border bg-background hover:border-primary/40"
+                  ? "border-accent bg-accent-soft"
+                  : "border-border bg-background hover:border-accent/40"
               )}
             >
               <span className="text-2xl">{f.emoji}</span>
@@ -144,19 +169,37 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
             </button>
           ))}
         </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setFeelingGood(true);
+            setFeeling("");
+            setSymptoms([]);
+            setOtherSymptomSelected(false);
+            setOtherSymptomText("");
+            setReactions([]);
+            setNotes("");
+          }}
+          className="mt-3 w-full border-success text-success hover:bg-success/10"
+        >
+          {lang === "es" ? "Me siento bien hoy, sin problemas ✓" : "I'm feeling good today, no issues to report ✓"}
+        </Button>
       </div>
 
       {/* STEP B: Symptoms */}
+      {!feelingGood && (
       <div>
         <p className="mb-2 text-sm font-semibold">{t("nav_step_symptoms")} <span className="text-destructive">*</span></p>
         <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-          {SYMPTOMS_EN.map((s) => {
+          {SYMPTOMS.map((s) => {
             const active = symptoms.includes(s.id);
             return (
               <button
                 key={s.id}
                 type="button"
-                onClick={() => toggle(symptoms, setSymptoms, s.id)}
+                onClick={() => toggleSymptom(s.id)}
                 className={cn(
                   "flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-base",
                   active
@@ -169,11 +212,33 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
               </button>
             );
           })}
+          <button
+            type="button"
+            onClick={() => toggleSymptom("other_free")}
+            className={cn(
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs font-medium transition-base",
+              otherSymptomSelected
+                ? "border-accent bg-accent text-accent-foreground"
+                : "border-border bg-background hover:border-accent/50"
+            )}
+          >
+            <span>✍️</span>
+            <span>{lang === "es" ? "Otro síntoma" : "Other symptom"}</span>
+          </button>
         </div>
+        {otherSymptomSelected && (
+          <Input
+            className="mt-2"
+            value={otherSymptomText}
+            onChange={(e) => setOtherSymptomText(e.target.value)}
+            placeholder={lang === "es" ? "Describe tu síntoma..." : "Describe your symptom..."}
+          />
+        )}
       </div>
+      )}
 
       {/* STEP C: Severity */}
-      {symptoms.length > 0 && (
+      {!feelingGood && (symptoms.length > 0 || hasOtherSymptom) && (
         <div>
           <div className="mb-2 flex items-center justify-between">
             <p className="text-sm font-semibold">{t("nav_step_severity")}</p>
@@ -189,14 +254,17 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
       )}
 
       {/* STEP D: Medication adherence */}
-      {medications.length > 0 && (
+      {!feelingGood && medications.length > 0 && (
         <div>
           <p className="mb-2 text-sm font-semibold">{t("nav_step_meds")}</p>
+          <Button type="button" variant="outline" onClick={takeAllMeds} className="mb-2 w-full border-success text-success hover:bg-success/10">
+            ✓ {lang === "es" ? "Tomé todos mis medicamentos hoy" : "Took all medications today"}
+          </Button>
           <div className="space-y-1.5">
             {medications.map((m) => (
               <div key={m.name} className="flex items-center justify-between rounded-lg bg-secondary/40 px-3 py-2 text-sm">
                 <span>
-                  {t("nav_med_taken")} <span className="font-semibold">{m.name} {m.dosage}</span> {t("nav_med_today")}
+                  {t("nav_med_taken")} <span className="font-semibold">{m.name}</span> {t("nav_med_today")}
                 </span>
                 <div className="flex gap-1">
                   {(["yes", "no"] as const).map((opt) => {
@@ -206,7 +274,10 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
                       <button
                         key={opt}
                         type="button"
-                        onClick={() => setMedAdherence((p) => ({ ...p, [m.name]: val }))}
+                        onClick={() => {
+                          setMedAdherence((p) => ({ ...p, [m.name]: val }));
+                          if (!val) setTookAllMeds(false);
+                        }}
                         className={cn(
                           "rounded-full border px-3 py-0.5 text-xs font-medium transition-base",
                           active
@@ -226,17 +297,17 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
       )}
 
       {/* STEP E: Reactions */}
-      {anyMedAnswered && (
+      {!feelingGood && anyMedAnswered && (
         <div>
           <p className="mb-2 text-sm font-semibold">{t("nav_step_reactions")}</p>
           <div className="flex flex-wrap gap-1.5">
-            {REACTIONS_EN.map((r) => {
-              const active = reactions.includes(r.id);
+            {REACTIONS.map((r) => {
+              const active = reactions.includes(r);
               return (
                 <button
-                  key={r.id}
+                  key={r}
                   type="button"
-                  onClick={() => toggle(reactions, setReactions, r.id)}
+                  onClick={() => toggle(reactions, setReactions, r)}
                   className={cn(
                     "rounded-full border px-2.5 py-1.5 text-xs font-medium transition-base",
                     active
@@ -244,7 +315,13 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
                       : "border-border bg-background hover:border-accent/50"
                   )}
                 >
-                  {r[lang]}
+                  {lang === "es"
+                    ? r === "Nausea after taking" ? "Náusea después de tomar"
+                      : r === "Dizziness after taking" ? "Mareo después de tomar"
+                        : r === "Stomach upset" ? "Malestar estomacal"
+                          : r === "Rash" ? "Erupción"
+                            : "Sin reacciones"
+                    : r}
                 </button>
               );
             })}
@@ -253,17 +330,21 @@ export function StructuredAiInput({ patientName, patientAge, conditions, medicat
       )}
 
       {/* STEP F: Notes */}
+      {!feelingGood && (
       <div>
         <p className="mb-2 text-sm font-semibold">{t("nav_step_notes")}</p>
-        <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="resize-none" />
+        <Textarea
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          rows={3}
+          className="resize-none"
+          placeholder={t("nav_step_notes")}
+        />
       </div>
+      )}
 
       {/* SEND */}
       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-        <Badge variant="outline" className="gap-1.5 text-xs border-accent/30 text-accent">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          {t("respondingIn")}: {lang === "es" ? `${t("langSpanish")} 🇲🇽` : `${t("langEnglish")} 🇺🇸`}
-        </Badge>
         <Button onClick={handleSubmit} disabled={!canSubmit} className="gradient-primary text-primary-foreground hover:opacity-95 gap-2">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           {t("sendToCura")} →

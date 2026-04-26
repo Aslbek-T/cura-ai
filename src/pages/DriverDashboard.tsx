@@ -191,7 +191,7 @@ export default function DriverDashboard() {
             <div className="flex items-center gap-2">
               <span className="text-2xl">{currentBadge.emoji}</span>
               <div>
-                <p className="text-xs text-muted-foreground">{lang === "es" ? "Insignia actual" : "Current badge"}</p>
+                <p className="text-xs text-muted-foreground">{t("driver_currentBadge")}</p>
                 <p className="text-sm font-semibold">{t(currentBadge.key as any)}</p>
               </div>
             </div>
@@ -201,11 +201,11 @@ export default function DriverDashboard() {
             <div>
               <Progress value={progressPct} className="h-2" />
               <p className="mt-2 text-xs text-muted-foreground">
-                {ridesToNext} {lang === "es" ? "viajes más para" : "more rides to"} <span className="font-medium text-foreground">{t(next.label as any)}</span> {next.emoji}
+                {ridesToNext} {t("driver_moreRidesTo")} <span className="font-medium text-foreground">{t(next.label as any)}</span> {next.emoji}
               </p>
             </div>
           ) : (
-            <p className="text-xs text-success font-medium">🏆 {lang === "es" ? "¡Insignia máxima alcanzada!" : "Top badge unlocked!"}</p>
+            <p className="text-xs text-success font-medium">🏆 {t("driver_topBadgeUnlocked")}</p>
           )}
         </Card>
       </section>
@@ -237,7 +237,7 @@ export default function DriverDashboard() {
                   <Badge className="bg-success/15 text-success border-0 text-xs hover:bg-success/15">{t("ride_open")}</Badge>
                 </div>
                 <div className="space-y-1.5 text-xs text-muted-foreground">
-                  <p className="flex items-start gap-1.5"><MapPin className="mt-0.5 h-3 w-3 shrink-0" /> <span><span className="font-medium text-foreground">{lang === "es" ? "Recoger" : "Pickup"}:</span> {r.pickup_address}</span></p>
+                  <p className="flex items-start gap-1.5"><MapPin className="mt-0.5 h-3 w-3 shrink-0" /> <span><span className="font-medium text-foreground">{t("driver_pickup")}:</span> {r.pickup_address}</span></p>
                   <p className="flex items-start gap-1.5"><Car className="mt-0.5 h-3 w-3 shrink-0" /> <span><span className="font-medium text-foreground">{t("destination")}:</span> {r.destination}</span></p>
                   <div className="flex flex-wrap items-center gap-3 pt-0.5">
                     <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" /> {new Date(r.requested_date).toLocaleDateString(lang === "es" ? "es-MX" : "en-US", { weekday: "short", month: "short", day: "numeric" })}</span>
@@ -277,7 +277,7 @@ export default function DriverDashboard() {
                       <Button asChild size="sm" variant="outline" className="gap-1.5">
                         <a href={mapsUrl} target="_blank" rel="noopener noreferrer">
                           <Navigation className="h-4 w-4" />
-                          {lang === "es" ? "Ver ruta" : "Open in Maps"}
+                          {t("driver_openInMaps")}
                         </a>
                       </Button>
                       <Button onClick={() => completeRide(r.id)} disabled={acting === r.id} size="sm" className="gradient-primary text-primary-foreground gap-1.5">
@@ -328,7 +328,7 @@ export default function DriverDashboard() {
                       #{idx + 1}
                     </span>
                     <span className={cn("truncate", isMe && "font-semibold text-accent")}>
-                      {row.full_name} {isMe && <span className="text-xs">({lang === "es" ? "tú" : "you"})</span>}
+                      {row.full_name} {isMe && <span className="text-xs">({t("driver_you")})</span>}
                     </span>
                     <span className="text-right font-semibold tabular-nums">{row.credits}</span>
                     <span className="text-right text-muted-foreground tabular-nums">{row.total_rides_completed}</span>

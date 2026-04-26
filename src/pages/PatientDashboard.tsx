@@ -54,11 +54,6 @@ interface RideRequest {
   created_at: string;
 }
 
-const MOCK_AI_RESPONSE = {
-  en: "Maria, based on your history with Type 2 Diabetes and Hypertension, the symptoms you describe need attention. Rest, drink water, and check your blood sugar in 30 minutes. If symptoms continue for more than 2 hours, contact Dr. Chen — I can flag this for him now.",
-  es: "María, basándome en tu historial con Diabetes Tipo 2 e Hipertensión, los síntomas que describes necesitan atención. Descansa, toma agua y revisa tu glucosa en 30 minutos. Si los síntomas continúan por más de 2 horas, contacta al Dr. Chen — puedo avisarle ahora.",
-};
-
 const eventIcon = (type: string) => {
   switch (type) {
     case "sms_checkin": return <MessageCircle className="h-4 w-4" />;
@@ -178,11 +173,28 @@ export default function PatientDashboard() {
       });
     }
 
-    await new Promise((r) => setTimeout(r, 1800));
-    setAiResponse(MOCK_AI_RESPONSE[lang]);
-    setAiTimestamp(new Date().toISOString());
-    setAiLoading(false);
-    loadData();
+    try {
+      if (!user) throw new Error("Missing user");
+      const res = await fetch("http://localhost:3001/api/ai-advice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patientId: user.id,
+          structuredInput: val.rawSummary,
+          language: lang,
+        }),
+      });
+      const data = await res.json();
+      if (data?.error) throw new Error(data.error);
+      setAiResponse(data?.response);
+      setAiFlagged(!!data?.flagged);
+      setAiTimestamp(new Date().toISOString());
+    } catch {
+      toast.error("Could not get AI response. Please try again.");
+    } finally {
+      setAiLoading(false);
+      loadData();
+    }
   };
 
   const insertAdvice = async (flagged: boolean) => {
@@ -192,8 +204,8 @@ export default function PatientDashboard() {
       patient_id: user.id,
       event_type: "ai_advice",
       content: {
-        en: `Patient summary: ${summary}. AI advice: ${MOCK_AI_RESPONSE.en}`,
-        es: `Resumen del paciente: ${summary}. Consejo IA: ${MOCK_AI_RESPONSE.es}`,
+        en: `Patient summary: ${summary}. AI advice: ${aiResponse}`,
+        es: `Resumen del paciente: ${summary}. Consejo IA: ${aiResponse}`,
         flagged: flagged ? "true" : "false",
       },
     });
@@ -259,7 +271,7 @@ export default function PatientDashboard() {
     return timeline.filter((e) => types.includes(e.event_type));
   }, [timeline, filter]);
 
-  const greeting = lang === "es" ? "Buenos días" : "Good morning";
+  const greeting = t("goodMorning");
 
   return (
     <AppShell title={t("patientDashboard")} extras={<NotificationBell count={openRideCount + (nextAppt ? 1 : 0)} />}>

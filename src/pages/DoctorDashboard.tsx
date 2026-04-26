@@ -48,9 +48,6 @@ interface FlaggedEvent {
   patient_name?: string;
 }
 
-const MOCK_SUMMARY =
-  "Maria Garcia, 58F. Type 2 Diabetes + Hypertension. Medications: Metformin 500mg twice daily, Lisinopril 10mg once daily. Recent: Reported dizziness and headache (severity 6/10) 5 days ago — resolved within 24 hours. Medication adherence confirmed 3 days ago. Flagged pattern: recurring headache correlating with BP fluctuation. Recommend BP check at next appointment.";
-
 export default function DoctorDashboard() {
   const { profile, user } = useAuth();
   const { t, lang } = useLanguage();
@@ -67,6 +64,8 @@ export default function DoctorDashboard() {
   const [activeEvents, setActiveEvents] = useState<any[]>([]);
 
   const [briefAppt, setBriefAppt] = useState<Appointment | null>(null);
+  const [briefLoading, setBriefLoading] = useState(false);
+  const [briefText, setBriefText] = useState<string | null>(null);
 
   const [msgPatient, setMsgPatient] = useState<PatientWithProfile | null>(null);
   const [msgText, setMsgText] = useState("");
@@ -158,9 +157,40 @@ export default function DoctorDashboard() {
       .order("created_at", { ascending: false })
       .limit(5);
     setActiveEvents(data ?? []);
-    await new Promise((r) => setTimeout(r, 1500));
-    setSummaryText(MOCK_SUMMARY);
-    setSummaryLoading(false);
+    try {
+      const res = await fetch("http://localhost:3001/api/ai-summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patientId: p.id }),
+      });
+      const data = await res.json();
+      setSummaryText(data?.summary);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to fetch AI summary");
+      setSummaryText(lang === "es" ? "No se pudo cargar el resumen IA." : "Could not load AI summary.");
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  const openBrief = async (a: Appointment) => {
+    setBriefAppt(a);
+    setBriefLoading(true);
+    setBriefText(null);
+    try {
+      const res = await fetch("http://localhost:3001/api/ai-brief", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patientId: a.patient_id, appointmentId: a.id }),
+      });
+      const data = await res.json();
+      setBriefText(data?.brief);
+    } catch (e: any) {
+      toast.error(e?.message || "Failed to fetch AI brief");
+      setBriefText(lang === "es" ? "No se pudo cargar el brief IA." : "Could not load AI brief.");
+    } finally {
+      setBriefLoading(false);
+    }
   };
 
   const updateApptStatus = async (id: string, newStatus: string) => {
@@ -218,9 +248,9 @@ export default function DoctorDashboard() {
         </div>
       </section>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-6 xl:grid-cols-2">
         {/* Patient roster */}
-        <section className="min-h-[500px] h-auto">
+        <section className="h-auto">
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-lg font-semibold">{t("yourPatients")}</h3>
             <div className="flex items-center gap-2">
@@ -239,7 +269,7 @@ export default function DoctorDashboard() {
                 className="gradient-primary text-primary-foreground gap-1 h-9"
               >
                 <Plus className="h-3.5 w-3.5" />
-                {lang === "es" ? "Agregar" : "Add Patient"}
+                {lang === "es" ? "Agregar +" : "Add Patient +"}
               </Button>
             </div>
           </div>
@@ -251,7 +281,7 @@ export default function DoctorDashboard() {
               {patients.length ? (lang === "es" ? "Sin resultados" : "No matches") : (lang === "es" ? "Sin pacientes asignados" : "No patients assigned.")}
             </Card>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 h-auto">
+            <div className="grid gap-3 sm:grid-cols-2">
               {filteredPatients.map((p) => {
                 const flags = flagCountFor(p.id);
                 const age = calculateAge(p.date_of_birth);
@@ -320,7 +350,7 @@ export default function DoctorDashboard() {
                               <SelectItem value="cancelled">{t("status_cancelled")}</SelectItem>
                             </SelectContent>
                           </Select>
-                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" onClick={() => setBriefAppt(a)}>
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1" onClick={() => openBrief(a)}>
                             <Bot className="h-3 w-3 text-accent" />
                             {t("viewAiBrief")}
                           </Button>
@@ -454,8 +484,17 @@ export default function DoctorDashboard() {
         </SheetContent>
       </Sheet>
 
-      {/* AI Brief Dialog */}
-      <Dialog open={!!briefAppt} onOpenChange={(o) => !o && setBriefAppt(null)}>
+  {/* AI Brief Dialog */}
+  <Dialog
+    open={!!briefAppt}
+    onOpenChange={(o) => {
+      if (!o) {
+        setBriefAppt(null);
+        setBriefText(null);
+        setBriefLoading(false);
+      }
+    }}
+  >
         <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -463,9 +502,16 @@ export default function DoctorDashboard() {
               {t("aiBrief")} — {briefAppt?.patient_name}
             </DialogTitle>
           </DialogHeader>
-          <div className="rounded-lg gradient-soft border border-accent/20 p-4 text-sm leading-relaxed">
-            {briefAppt?.ai_brief || (lang === "es" ? "Sin resumen disponible." : "No AI brief available.")}
+      <div className="rounded-lg gradient-soft border border-accent/20 p-4 text-sm leading-relaxed">
+        {briefLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {lang === "es" ? "Generando..." : "Generating..."}
           </div>
+        ) : (
+          (briefText || briefAppt?.ai_brief || (lang === "es" ? "Sin resumen disponible." : "No AI brief available."))
+        )}
+      </div>
         </DialogContent>
       </Dialog>
 
