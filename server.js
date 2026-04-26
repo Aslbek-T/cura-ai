@@ -55,15 +55,23 @@ async function callAI(prompt, maxTokens = 400) {
 // HELPER: fetch patient context from Supabase
 // ─────────────────────────────────────────────
 async function getPatientContext(patientId) {
-  const { data: patient } = await supabase
+  const { data: patient, error: pe } = await supabase
     .from('patients')
-    .select(`
-      *,
-      profiles (full_name, preferred_language),
-      assigned_doctor:profiles!patients_assigned_doctor_id_fkey (full_name)
-    `)
+    .select('*')
     .eq('id', patientId)
     .single();
+
+  const { data: profile, error: pre } = await supabase
+    .from('profiles')
+    .select('full_name, preferred_language')
+    .eq('id', patientId)
+    .single();
+
+  const { data: doctorProfile } = patient?.assigned_doctor_id ? await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', patient.assigned_doctor_id)
+    .single() : { data: null };
 
   const { data: timeline } = await supabase
     .from('health_timeline')
@@ -79,7 +87,13 @@ async function getPatientContext(patientId) {
     .order('scheduled_at', { ascending: false })
     .limit(3);
 
-  return { patient, timeline, appointments };
+  const merged = patient ? {
+    ...patient,
+    profiles: profile,
+    assigned_doctor: doctorProfile
+  } : null;
+
+  return { patient: merged, timeline, appointments };
 }
 
 // ─────────────────────────────────────────────
@@ -277,7 +291,7 @@ app.post('/api/sms/inbound', async (req, res) => {
     const incomingText = Body?.trim();
     const fromPhone = From;
 
-    const { data: profile } = await supabase
+    const { data: profile, error: profileErr } = await supabase
       .from('profiles')
       .select('id, full_name, preferred_language')
       .eq('phone', fromPhone)
@@ -293,7 +307,7 @@ app.post('/api/sms/inbound', async (req, res) => {
     let replyText = '';
 
     if (!profile) {
-      replyText = 'Welcome to Cura AI. We could not find your account. Please contact your Banner provider to get registered.';
+      replyText = `Welcome to Cura AI. We could not find your account. ${profileErr?.message || ''}`.trim();
     } else {
       const lang = profile.preferred_language || 'en';
       const patientId = profile.id;
