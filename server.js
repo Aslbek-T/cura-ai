@@ -23,10 +23,10 @@ let twilioClient = null;
     console.log('Twilio not configured — SMS disabled');
   }
 
-const supabase = createClient(
-  process.env.VITE_SUPABASE_URL,
-  process.env.VITE_SUPABASE_ANON_KEY
-);
+  const supabase = createClient(
+    process.env.VITE_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
+  );
 
 // ─────────────────────────────────────────────
 // AI HELPER — OpenRouter free tier
