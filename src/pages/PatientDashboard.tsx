@@ -114,8 +114,8 @@ export default function PatientDashboard() {
       supabase.from("appointments").select("*").eq("patient_id", user.id).neq("status", "completed").order("scheduled_at", { ascending: true }),
       supabase.from("ride_requests").select("*").eq("patient_id", user.id).order("created_at", { ascending: false }),
     ]);
-    setPatient((patRes.data as PatientRow) ?? null);
-    setTimeline((tlRes.data as TimelineEvent[]) ?? []);
+    setPatient((patRes.data as unknown as PatientRow) ?? null);
+    setTimeline((tlRes.data as unknown as TimelineEvent[]) ?? []);
     setAppointments((apptRes.data as Appointment[]) ?? []);
     setRides((rideRes.data as RideRequest[]) ?? []);
 
