@@ -10,7 +10,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  Star, Trophy, Car, MapPin, Calendar, CheckCircle2, Loader2, ChevronDown, Info, Inbox,
+  Star, Trophy, Car, MapPin, Calendar, CheckCircle2, Loader2, ChevronDown, Info, Inbox, Navigation,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
