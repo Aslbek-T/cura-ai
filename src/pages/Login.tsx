@@ -151,7 +151,13 @@ export default function Login() {
             </div>
           </Card>
 
-          <p className="mt-6 text-center text-xs text-muted-foreground">
+          <p className="mt-6 text-center text-sm text-muted-foreground">
+            {lang === "es" ? "¿No tienes una cuenta?" : "Don't have an account?"}{" "}
+            <Link to="/signup" className="font-semibold text-primary hover:underline">
+              {t("signUp")}
+            </Link>
+          </p>
+          <p className="mt-3 text-center text-xs text-muted-foreground">
             HIPAA-conscious design · Built for rural Arizona communities
           </p>
         </div>
