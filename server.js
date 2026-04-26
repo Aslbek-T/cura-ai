@@ -23,10 +23,10 @@ let twilioClient = null;
     console.log('Twilio not configured — SMS disabled');
   }
 
-  const supabase = createClient(
-    process.env.VITE_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY || process.env.VITE_SUPABASE_ANON_KEY
-  );
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL,
+  process.env.VITE_SUPABASE_ANON_KEY
+);
 
 // ─────────────────────────────────────────────
 // AI HELPER — OpenRouter free tier
@@ -413,19 +413,6 @@ End with a simple yes/no question they can reply to.
 // START SERVER
 // ─────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-
-app.get('/debug', async (req, res) => {
-    const { data: patients, error: pe } = await supabase.from('patients').select('id').limit(5);
-    const { data: profiles, error: pre } = await supabase.from('profiles').select('id, role').limit(5);
-    res.json({ 
-      patients, 
-      profiles,
-      patientsError: pe?.message,
-      profilesError: pre?.message,
-      supabaseUrl: process.env.VITE_SUPABASE_URL?.substring(0, 30)
-    });
-  });
-
 app.listen(PORT, () => {
   console.log(`Cura AI backend running on http://localhost:${PORT}`);
 });
